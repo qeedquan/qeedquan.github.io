@@ -1,1 +1,0 @@
-Various notes on things
