@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "How to create a flat ARM binaries in Plan 9"
+title:  "How to create flat ARM binaries in Plan 9"
 date:   2017-05-29 09:28:36 -0400
 categories: plan9 arm binary
 ---
@@ -206,10 +206,8 @@ str2
 tab1
 tab2
 tab3
-
 # 'Ctrl-X' and then 'a' to exit
 QEMU: Terminated
-
 {% endhighlight %}
 
 
