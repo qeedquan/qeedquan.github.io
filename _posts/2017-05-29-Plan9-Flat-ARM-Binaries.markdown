@@ -4,7 +4,7 @@ title:  "How to create flat ARM binaries in Plan 9"
 date:   2017-05-29 09:28:36 -0400
 categories: plan9 arm binary
 ---
-Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are loaded directly into memory and executed. 
+Flat binaries are program executables that do not contain an executable header such as ELF or PE. Flat binaries are loaded directly into memory and executed. 
 Boot loaders and kernels are examples of software that are created as flat binaries for loading.
 
 This tutorial will show how to create a flat ARM binary using the Plan 9 toolchain. We based our example code from a tutorial [here].
@@ -202,7 +202,7 @@ str2
 tab1
 tab2
 tab3
-# 'Ctrl-X' and then 'a' to exit
+# 'Ctrl-A' and then 'x' to exit
 QEMU: Terminated
 {% endhighlight %}
 
