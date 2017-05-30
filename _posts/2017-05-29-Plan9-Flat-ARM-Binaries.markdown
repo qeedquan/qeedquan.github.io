@@ -4,13 +4,10 @@ title:  "How to create flat ARM binaries in Plan 9"
 date:   2017-05-29 09:28:36 -0400
 categories: plan9 arm binary
 ---
-Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are things
-that are loaded directly into memory and executed. Boot loaders and kernel images are examples of software that needs
-to be created as a flat binary for loading.
+Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are loaded directly into memory and executed. 
+Boot loaders and kernels are examples of software that are created as flat binaries for loading.
 
-The example program we based on for this tutorial taken from this [here]. But instead of using the GNU toolchain, we will
-use the Plan 9 toolchain. We will also show some extra behavior that needs to be done for Plan 9 to gain access to things
-such as global strings.
+This tutorial will show how to create a flat ARM binary using the Plan 9 toolchain. We based our example code from a tutorial [here].
 
 {% highlight c %}
 /* test.c */
@@ -31,8 +28,8 @@ println(char *s)
 }
 
 /* 
- * Test that we set everything up correctly so we
- * can access strings
+ * Test that we set everything up correctly in startup.s
+ * We should be able to access strings if we did
  */
 
 static char *str1 = "str1";
@@ -64,10 +61,9 @@ test(void)
 
 TEXT start(SB), 1, $0
 	/* 
-	 * 5c will generate accesses to global
-	 * char pointer using R12 (IP) as a lookup register, so the
-	 * linker has pre-defined this address for us that we need to
-	 * set for R12 on startup
+	 * 5c will generate accesses to global strings using R12 (IP) 
+	 * as a lookup register, so the linker has pre-defined this 
+	 * address for us that we need to set for R12 on startup
 	 */
 	MOVW    $setR12(SB), R12
 
@@ -195,7 +191,7 @@ Disassembly of section .data:
 
 {% endhighlight %}
 
-Everything seems correct, so we run it through qemu and we should see the expected output
+Everything seems correct, so we run it through qemu and we should see the expected output.
 {% highlight shell %}
 
 # Unix commands

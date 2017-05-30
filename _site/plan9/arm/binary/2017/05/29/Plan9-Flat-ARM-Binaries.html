@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>How to create flat ARM binaries in Plan 9</title>
-  <meta name="description" content="Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are thingsthat are loaded directly into memory an...">
+  <meta name="description" content="Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are loaded directly into memory and executed. Boo...">
 
   <link rel="stylesheet" href="/css/main.css">
   <link rel="canonical" href="http://qeedquan.github.io/plan9/arm/binary/2017/05/29/Plan9-Flat-ARM-Binaries.html">
@@ -56,13 +56,10 @@
   </header>
 
   <div class="post-content" itemprop="articleBody">
-    <p>Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are things
-that are loaded directly into memory and executed. Boot loaders and kernel images are examples of software that needs
-to be created as a flat binary for loading.</p>
+    <p>Flat binaries are program executables that do not contain a executable header like ELF or PE. Flat binaries are loaded directly into memory and executed. 
+Boot loaders and kernels are examples of software that are created as flat binaries for loading.</p>
 
-<p>The example program we based on for this tutorial taken from this <a href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">here</a>. But instead of using the GNU toolchain, we will
-use the Plan 9 toolchain. We will also show some extra behavior that needs to be done for Plan 9 to gain access to things
-such as global strings.</p>
+<p>This tutorial will show how to create a flat ARM binary using the Plan 9 toolchain. We based our example code from a tutorial <a href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">here</a>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/* test.c */</span>
 
@@ -82,8 +79,8 @@ such as global strings.</p>
 <span class="p">}</span>
 
 <span class="cm">/* 
- * Test that we set everything up correctly so we
- * can access strings
+ * Test that we set everything up correctly in startup.s
+ * We should be able to access strings if we did
  */</span>
 
 <span class="k">static</span> <span class="kt">char</span> <span class="o">*</span><span class="n">str1</span> <span class="o">=</span> <span class="s">"str1"</span><span class="p">;</span>
@@ -112,10 +109,9 @@ such as global strings.</p>
 
 TEXT start(SB), 1, $0
 	/* 
-	 * 5c will generate accesses to global
-	 * char pointer using R12 (IP) as a lookup register, so the
-	 * linker has pre-defined this address for us that we need to
-	 * set for R12 on startup
+	 * 5c will generate accesses to global strings using R12 (IP) 
+	 * as a lookup register, so the linker has pre-defined this 
+	 * address for us that we need to set for R12 on startup
 	 */
 	MOVW    $setR12(SB), R12
 
@@ -237,7 +233,7 @@ Disassembly of section .data:
    11038:	206e616c 	rsbcs	r6, lr, ip, ror #2
    1103c:	00000039 	andeq	r0, r0, r9, lsr r0</code></pre></figure>
 
-<p>Everything seems correct, so we run it through qemu and we should see the expected output</p>
+<p>Everything seems correct, so we run it through qemu and we should see the expected output.</p>
 
 <figure class="highlight"><pre><code class="language-shell" data-lang="shell"><span class="c"># Unix commands</span>
 <span class="gp">$ </span>qemu-system-arm -M versatilepb -m 128M -nographic -kernel plan9.bin
