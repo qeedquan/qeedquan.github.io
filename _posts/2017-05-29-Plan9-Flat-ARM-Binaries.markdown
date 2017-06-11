@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "How to create flat ARM binaries in Plan 9"
-date:   2017-05-29 09:28:36 -0400
+date:   2017-05-29
 categories: plan9 arm binary
 ---
 Flat binaries are program executables that do not contain an executable header such as ELF or PE. Flat binaries are loaded directly into memory and executed. 
