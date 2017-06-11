@@ -47,7 +47,7 @@ TEXT load_pgtbl(SB), 1, $-4
 	MCR		15, 0, R3, C(2), C(0), 0
 
 	// enable MMU, cache, write buffer, high vector tbl,
-    // disable subpage
+	// disable subpage
 	MRC		15, 0, R3, C(1), C(0), 0
 	ORR		$0x80300D, R3
 	MCR		15, 0, R3, C(1), C(0), 0
