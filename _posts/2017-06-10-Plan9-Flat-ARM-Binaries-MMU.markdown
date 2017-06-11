@@ -103,7 +103,7 @@ as it did for the xv6-rpi kernel image. We need to adjust the locations of the c
 with the restriction of placing everything at 0x010000.
 
 With these two limitations, we have to ask ourselves an important question before we continue.
-How does this even work? If we specify the text segment at a virtual address (at 0x80010000), wouldn't the code generated
+How does this even work? If we specify the text segment at the virtual address 0x80010000, wouldn't the code generated
 use this address then crash and burn due to being unmapped on bootup? To answer this we need to look at some assembly.
 
 The source code we are about to disassemble is in [entry.s] and [start.c], review it to see what it is doing.
@@ -320,22 +320,23 @@ Disassembly of section .text:
 
 {% endhighlight %}
 
-It seems that the toolchain is placing the code at 0x80010000 for startup but note the instructions.
-All of these instructions does not depend on where they are in memory. One might about the BL instruction,
-doesn't that jump to an absolute location? It turns out not, BL is jumping relative to its location, but
-objdump calculated that address for us and dumped it out as a seemingly absolute location. 
+It seems that the toolchain is placing the code at 0x80010000 on startup but take a deeper look at the instructions.
+All these instructions do not depend on where they are in memory. One glaring instruction is the BL instruction for
+calling functions, does that not use absolute locations? It turns out not to be the case, the BL instruction is jumping relative to its location;
+objdump calculated that address for us and printed it out like an absolute location but it is not really not (refer to the ARM manual).
 
 The Plan 9 toolchain does not generate code that needs the exact address for simple statements,
-function calls, loops, local variable access. So what does depend on the location of where it is at?
-The answer is constant string lookups and global variable accesses, the compiler will need to know where to get the value.
-This means that we cannot use global variables or pointer to constant strings 
-before we enable the MMU and work in the virtual address space (0x80010000)
+function calls, loops, and local variable access. But it does generate code that does
+depend on the location for constant string lookups and global variable accesses. It will look up the data address 
+and calculate the relative offset to that; it encodes the offset in the binary for those. 
+This means that we cannot use global variables or pointer to constant strings before we enable the MMU and 
+work in the virtual address space at 0x80010000.
 
 Even if we can't use global variables or string pointers from the code, we can certainly use them if we know
 the exact memory location of where they are in memory. This means when we need access to a global variable
 or string constant before we enable the MMU, we just need to specify an absolute physical location to it.
 
-This ends the coverage of the basic theory on how this will work, let us see how this works in the code.
+This ends the coverage of the basic theory on how this will work, let us see how this plays out in the code.
 
 ### Practice
 
@@ -401,8 +402,8 @@ it on the fly and the addresses we see above is just one instance of the computa
 We just took the constants and subtracted it by 0x10000 and rounded the edata_entry to where svc_stktop is, we don't care 
 about the other locations so we don't need to care about allocating memory for those as they did. They are striving for a complete kernel and we are just trying to show a demo of using the MMU.
 
-We port over entry.S, start.c to Plan 9, due to the fact that the Plan 9 compiler does not support inline assembly,
-any code that uses it in xv6-rpi will have to be done in the assembly file, such as load_pgtbl()
+We port over entry.S, start.c, and main.c to Plan 9. Due to the fact that the Plan 9 compiler does not support inline assembly,
+any code that uses it in xv6-rpi will have to be done in the assembly file such as the load_pgtbl() function.
 
 {% highlight assembly %}
 #include "memlayout.h"
