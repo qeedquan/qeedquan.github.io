@@ -764,9 +764,11 @@ yyy
 You can get the code to the demo at this [url].
 
 [article]: {{ .site-url }}/plan9/arm/binary/2017/05/29/Plan9-Flat-ARM-Binaries.html
+[entry.s]: https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/plan9_flat_arm_mmu/entry.s
 [here]: http://infocenter.arm.com/help/topic/com.arm.doc.ddi0301h/ddi0301h_arm1176jzfs_r0p7_trm.pdf
 [identity mapping]: http://wiki.osdev.org/Identity_Paging
 [kernel.ld]: https://github.com/david50407/xv6-rpi/blob/master/src/kernel.ld
 [Memory Management Unit]: https://en.wikipedia.org/wiki/Memory_management_unit
+[start.c]: https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/plan9_flat_arm_mmu/start.c
 [url]: https://github.com/qeedquan/qeedquan.github.io/tree/master/assets/plan9_flat_arm_mmu
 [xv6-rpi]: https://github.com/david50407/xv6-rpi
