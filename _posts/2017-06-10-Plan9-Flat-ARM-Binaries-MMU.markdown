@@ -767,5 +767,5 @@ You can get the code to the demo at this [url].
 [identity mapping]: http://wiki.osdev.org/Identity_Paging
 [kernel.ld]: https://github.com/david50407/xv6-rpi/blob/master/src/kernel.ld
 [Memory Management Unit]: https://en.wikipedia.org/wiki/Memory_management_unit
-[url]: {{ site.url }}/assets/plan9_flat_arm_mmu
+[url]: https://github.com/qeedquan/qeedquan.github.io/tree/master/assets/plan9_flat_arm_mmu
 [xv6-rpi]: https://github.com/david50407/xv6-rpi
