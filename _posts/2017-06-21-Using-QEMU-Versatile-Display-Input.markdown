@@ -10,7 +10,7 @@ the ability to run a complete OS such as Linux on top.
 
 This tutorial will show how to program the display and input devices and use it without an OS. We use QEMU [2.9.0] for this tutorial and the Plan 9 toolchain. This is only a barebones example that gets it working, for a more complete setup, refer to the documentation of the devices.
 
-**Note: This example only works in QEMU, it will not work on a real board because we skip some setup that real hardware would need but QEMU does not.**
+**Note: This example only works in QEMU, it will not work on a real board because we skip some setup that real hardware would need but QEMU doesn't.**
 
 We setup the board as described in the previous [article] without the MMU to make things more expedient. We disable all interrupts and initialize the devices and then jump into main() to do all the setup of the devices and main loop.
 
@@ -622,7 +622,7 @@ to pull in some code from the Plan 9 libc functions.
 For va_list, we can get the code for it from [u.h] from the Plan 9 source tree. The Plan 9 compilers passes the variadic
 variables on the stack, so we just start walking memory locations from an argument to get to the next one.
 
-Division is done in software as some ARM do not have a floating point unit, so we need pull the code from the Plan 9 [libc functions] ([vlrt.c], [vlop.s], and [div.s] specifically). If one tries to use the division and modulus operations without
+Division is done in software as some ARM processors do not have division support, so we need pull the code from the Plan 9 [libc functions] ([vlrt.c], [vlop.s], and [div.s] specifically). If one tries to use the division and modulus operations without
 these files, the linker will try to pull them in and fail if it can't find them.
 
 ### Conclusion
