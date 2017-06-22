@@ -12,7 +12,7 @@ This tutorial will show how to program the display and input devices and use it 
 
 **Note: This example only works in QEMU, it will not work on a real board because we skip some setup that real hardware would need but QEMU does not.**
 
-We setup the board as described [here] without the MMU to make things more expedient. We disable all interrupts and initialize the devices and then jump into main() to do all the setup of the devices and main loop.
+We setup the board as described in the previous [article] without the MMU to make things more expedient. We disable all interrupts and initialize the devices and then jump into main() to do all the setup of the devices and main loop.
 
 {% highlight assembly %}
 // l.s
@@ -634,6 +634,7 @@ If all goes well, this is what you should see from QEMU:
 You can get the code to the demo [here].
 
 [2.9.0]: http://download.qemu-project.org/qemu-2.9.0.tar.xz
+[article]: https://qeedquan.github.io/plan9/arm/binary/2017/05/29/Plan9-Flat-ARM-Binaries.html
 [CLCD data sheet]: http://infocenter.arm.com/help/topic/com.arm.doc.ddi0161e/I904755.html
 [div.s]: https://code.9front.org/hg/plan9front/file/37a3cd19b200/sys/src/libc/arm/div.s
 [here]:  https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/using_qemu_versatile_display_input

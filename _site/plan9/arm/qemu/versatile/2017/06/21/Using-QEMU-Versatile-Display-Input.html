@@ -64,7 +64,7 @@ the ability to run a complete OS such as Linux on top.</p>
 
 <p><strong>Note: This example only works in QEMU, it will not work on a real board because we skip some setup that real hardware would need but QEMU does not.</strong></p>
 
-<p>We setup the board as described <a href="https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/using_qemu_versatile_display_input">here</a> without the MMU to make things more expedient. We disable all interrupts and initialize the devices and then jump into main() to do all the setup of the devices and main loop.</p>
+<p>We setup the board as described in the previous <a href="https://qeedquan.github.io/plan9/arm/binary/2017/05/29/Plan9-Flat-ARM-Binaries.html">article</a> without the MMU to make things more expedient. We disable all interrupts and initialize the devices and then jump into main() to do all the setup of the devices and main loop.</p>
 
 <figure class="highlight"><pre><code class="language-assembly" data-lang="assembly">// l.s
 #define SVC_MODE 0x13
