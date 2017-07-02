@@ -326,7 +326,7 @@ Timer phystimer[4] = {
         .r = (void *)(0x101e2000 + 0x20),
     },
     {
-        .r = (void *)0x101e2000,
+        .r = (void *)0x101e3000,
     },
     {
         .r = (void *)(0x101e3000 + 0x20),
