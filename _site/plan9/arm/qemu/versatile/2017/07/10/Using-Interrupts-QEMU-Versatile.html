@@ -61,12 +61,12 @@ the executing task. Interrupts allowing one to switch out tasks, have periodic t
 network packets appear, and much more. Most devices on the computer have the ability of generating an interrupt to notify
 the processor a state change.</p>
 
-<p>This tutorial will show how to use the interrupts for the <a href="https://github.com/qemu/qemu/blob/master/hw/arm/versatilepb.c">QEMU Versatile</a>. The code is based on the previous <a href="plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">article</a>,
+<p>This tutorial will show how to use the interrupts for the <a href="https://github.com/qemu/qemu/blob/master/hw/arm/versatilepb.c">QEMU Versatile</a>. The code is based on the previous <a href="https://qeedquan.github.io/plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">article</a>,
 except we will use interrupts for keyboard/mouse events and enable timer interrupts.</p>
 
 <h3 id="main">Main</h3>
 
-<p>Initialization stays the same for the most part as the previous <a href="plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">article</a>,
+<p>Initialization stays the same for the most part as the previous <a href="https://qeedquan.github.io/plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">article</a>,
 but now we initialize the interrupts with <code class="highlighter-rouge">trapinit</code> and enable them in <code class="highlighter-rouge">intrson</code>.</p>
 
 <p>In our <code class="highlighter-rouge">main</code>, we get rid of <code class="highlighter-rouge">event</code> handling and instead use interrupt

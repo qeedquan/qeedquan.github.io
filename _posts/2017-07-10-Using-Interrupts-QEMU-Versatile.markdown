@@ -762,7 +762,7 @@ key 11
 You can get the code for the demo [here].
 
 [ARM Exception Tutorial]: http://osnet.cs.nchu.edu.tw/powpoint/Embedded94_1/Chapter%207%20ARM%20Exceptions.pdf
-[article]: {{ .site-url }}plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html
+[article]: https://qeedquan.github.io/plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html
 [here]: https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/using_interrupts_qemu_versatile
 [PL190 Interrupt Controller]: http://infocenter.arm.com/help/topic/com.arm.doc.ddi0181e/DDI0181.pdf
 [Plan9 BCM]: https://code.9front.org/hg/plan9front/file/d44f7b86e2ba/sys/src/9/bcm

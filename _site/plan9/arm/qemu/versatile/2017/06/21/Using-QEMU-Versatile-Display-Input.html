@@ -414,7 +414,7 @@ Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.do
 
 <h3 id="clcd">CLCD</h3>
 <p>CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free memory area for the framebuffer. We also need to enable and disable the display during drawing so we do not see the partial updates which shows tearing. The frame buffer is used as a building block for the familiar 
-setpixel() and fillrect(). The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0161e/I904755.html">CLCD data sheet</a>.</p>
+<code class="highlighter-rouge">setpixel</code> and <code class="highlighter-rouge">fillrect</code>. The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0161e/I904755.html">CLCD data sheet</a>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// clcd.c
 </span>
@@ -649,7 +649,7 @@ to see if there is data available, if there is just grab the data and parse it. 
 <span class="p">}</span></code></pre></figure>
 
 <h3 id="odds-and-ends">Odds and Ends</h3>
-<p>For some of our libc functions such as print(), we have to use va_args and division for printing integers. This requires us
+<p>For some of our libc functions such as <code class="highlighter-rouge">print</code>, we have to use va_args and division for printing integers. This requires us
 to pull in some code from the Plan 9 libc functions.</p>
 
 <p>For va_list, we can get the code for it from <a href="https://code.9front.org/hg/plan9front/file/37a3cd19b200/arm/include/u.h">u.h</a> from the Plan 9 source tree. The Plan 9 compilers passes the variadic

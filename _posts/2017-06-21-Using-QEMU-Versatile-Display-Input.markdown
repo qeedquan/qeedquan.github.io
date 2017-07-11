@@ -377,7 +377,7 @@ microdelay(int n)
 
 ### CLCD
 CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free memory area for the framebuffer. We also need to enable and disable the display during drawing so we do not see the partial updates which shows tearing. The frame buffer is used as a building block for the familiar 
-setpixel() and fillrect(). The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the [CLCD data sheet].
+`setpixel` and `fillrect`. The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the [CLCD data sheet].
 
 {% highlight c %}
 // clcd.c
@@ -618,7 +618,7 @@ updatecursor(Cursor *c, u32 ms)
 {% endhighlight %}
 
 ### Odds and Ends
-For some of our libc functions such as print(), we have to use va_args and division for printing integers. This requires us
+For some of our libc functions such as `print`, we have to use va_args and division for printing integers. This requires us
 to pull in some code from the Plan 9 libc functions. 
 
 For va_list, we can get the code for it from [u.h] from the Plan 9 source tree. The Plan 9 compilers passes the variadic
