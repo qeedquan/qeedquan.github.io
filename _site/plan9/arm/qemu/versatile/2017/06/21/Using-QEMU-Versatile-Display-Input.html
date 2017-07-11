@@ -266,12 +266,12 @@ these memory spaces:</p>
 <p>Since we are operating without an MMU, we can just create a pointer to these addresses and write to it directly.</p>
 
 <h3 id="uart">UART</h3>
-<p>UART provides serial output which we route to stdio using the QEMU command line flag <strong><em>-serial stdio</em></strong>. We only use
-the DATA register to output to UART since we use it only for printing to standard output for debugging.</p>
+<p>UART provides serial output which we route to stdio using the QEMU command line flag <strong><em>-serial stdio</em></strong>. Only
+the DATA register is used for outputting to UART for printing to stdout.</p>
 
 <p>To use the UART DATA register, we just need to write to the register the character we want to output, QEMU should then
 print it out to standard output. We only use UART0 for terminal output, so the other UARTs are left unused, but using those
-would be the same code, just different register offsets. Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0183f/DDI0183.pdf">UART data sheet</a>.</p>
+would be the same code; just at different register offsets. Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0183f/DDI0183.pdf">UART data sheet</a>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// uart.c
 </span>
@@ -326,8 +326,9 @@ would be the same code, just different register offsets. Here is the link to the
 
 <h3 id="timer">Timer</h3>
 <p>The timers contain a monotonic counter that ticks with a fixed period, enabling us to keep track of elapsed time.
-We use it to implement delays for the CLCD display controller, to let it refresh. Since we only need to sleep in a single
-threaded context, we only use one timer. We setup the timer to be 32 bit resolution and enable it for the first timer. By
+We use it to implement delays for the CLCD display controller for refreshing the screen. 
+Since we only need to sleep in a single threaded context, 
+only one timer is needed. We setup the timer to be 32 bit resolution and enable it for the first timer. By
 default, the timer ticks at 1 MHZ a second so we just need to read the current value in a loop to get the delay we need.
 Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0271d/DDI0271.pdf">Timer data sheet</a>.</p>
 
@@ -412,7 +413,8 @@ Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.do
 <span class="p">}</span></code></pre></figure>
 
 <h3 id="clcd">CLCD</h3>
-<p>CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free area for the framebuffer. We enable and disable the display during drawing so we do not see the partial updates which shows tearing. We use the frame buffer to implement the familiar setpixel() and fillrect() on top of it. The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0161e/I904755.html">CLCD data sheet</a>.</p>
+<p>CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free memory area for the framebuffer. We also need to enable and disable the display during drawing so we do not see the partial updates which shows tearing. The frame buffer is used as a building block for the familiar 
+setpixel() and fillrect(). The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0161e/I904755.html">CLCD data sheet</a>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// clcd.c
 </span>

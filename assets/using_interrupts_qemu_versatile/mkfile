@@ -1,0 +1,35 @@
+CC=5c
+LD=5l
+O=5
+AS=5a
+
+TARG=plan9
+loadaddr=0x10000
+
+%.$O: %.c
+	$CC $CFLAGS $stem.c
+
+%.$O: %.s
+	$AS $ASFLAGS $stem.s
+
+OBJ=\
+	l.$O\
+	lexception.$O\
+	trap.$O\
+	div.$O\
+	vlop.$O\
+	vlrt.$O\
+	main.$O\
+	libc.$O\
+	clcd.$O\
+	uart.$O\
+	draw.$O\
+	timer.$O\
+	input.$O\
+
+all: $OBJ
+	$LD -o $TARG -H6 -T$loadaddr -R4096 -l $OBJ
+	$LD -o $TARG.out -T$loadaddr -R4096 -l $OBJ
+
+clean:
+	rm -f $TARG $TARG.out $OBJ

@@ -399,11 +399,11 @@ it on the fly and the addresses we see above is just one instance of the computa
 
 {% endhighlight %}
 
-We just took the constants and subtracted it by 0x10000 and rounded the edata_entry to where svc_stktop is, we don't care 
+We just took the constants and subtracted it by 0x10000 and rounded `edata_entry` to where `svc_stktop` is, we don't care 
 about the other locations so we don't need to care about allocating memory for those as they did. They are striving for a complete kernel and we are just trying to show a demo of using the MMU.
 
-We port over entry.S, start.c, and main.c to Plan 9. Due to the fact that the Plan 9 compiler does not support inline assembly,
-any code that uses it in xv6-rpi will have to be done in the assembly file such as the load_pgtbl() function.
+We port over `entry.S`, `start.c`, and `main.c` to Plan 9. Due to the fact that the Plan 9 compiler does not support inline assembly,
+any code that uses it in [xv6-rpi] will have to be done in the assembly file such as the `load_pgtbl` function.
 
 {% highlight assembly %}
 #include "memlayout.h"
@@ -574,12 +574,12 @@ start(void)
 
 {% endhighlight %}
 
-We start in _start on bootup and we clear out the memory for the data structures we will setup for the MMU and stack.
-Then we jump to start() in C to make it easier to setup the data structure for the MMU. 
-start() will setup the pages for [identity mapping] using set_bootpgtbl() and then call load_pgtbl() to tell the CPU
-of where the page tables are and enable the MMU. We then call jump_stack() to switch over to the virtual address
-space by setting up the stack pointer and program counter to be inside the virtual address space. We then call kmain()
-and inside kmain(), test various constructs such as global variable access, string constants, and pointer dereferencing.
+We start in `_start` on bootup and we clear out the memory for the data structures we will setup for the MMU and stack.
+Then we jump to `start` in C to make it easier to setup the data structure for the MMU. 
+`start` will setup the pages for [identity mapping] using `set_bootpgtbl` and then call `load_pgtbl` to tell the CPU
+of where the page tables are and enable the MMU. We then call `jump_stack` to switch over to the virtual address
+space by setting up the stack pointer and program counter to be inside the virtual address space. We then call `kmain`
+and inside `kmain`, test various constructs such as global variable access, string constants, and pointer dereferencing.
 
 {% highlight c %}
 /* kmain.c */

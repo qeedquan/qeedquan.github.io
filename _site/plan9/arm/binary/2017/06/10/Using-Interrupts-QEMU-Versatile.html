@@ -10,7 +10,7 @@
   <meta name="description" content="Theory">
 
   <link rel="stylesheet" href="/css/main.css">
-  <link rel="canonical" href="http://qeedquan.github.io/plan9/arm/binary/2017/06/10/Plan9-Flat-ARM-Binaries-MMU.html">
+  <link rel="canonical" href="http://qeedquan.github.io/plan9/arm/binary/2017/06/10/Using-Interrupts-QEMU-Versatile.html">
   <link rel="alternate" type="application/rss+xml" title="" href="http://qeedquan.github.io/feed.xml">
 </head>
 
@@ -435,11 +435,11 @@ it on the fly and the addresses we see above is just one instance of the computa
 </span>
 <span class="cp">#define P2V(a) ((a) + KERNBASE)</span></code></pre></figure>
 
-<p>We just took the constants and subtracted it by 0x10000 and rounded <code class="highlighter-rouge">edata_entry</code> to where <code class="highlighter-rouge">svc_stktop</code> is, we don’t care 
+<p>We just took the constants and subtracted it by 0x10000 and rounded the edata_entry to where svc_stktop is, we don’t care 
 about the other locations so we don’t need to care about allocating memory for those as they did. They are striving for a complete kernel and we are just trying to show a demo of using the MMU.</p>
 
-<p>We port over <code class="highlighter-rouge">entry.S</code>, <code class="highlighter-rouge">start.c</code>, and <code class="highlighter-rouge">main.c</code> to Plan 9. Due to the fact that the Plan 9 compiler does not support inline assembly,
-any code that uses it in <a href="https://github.com/david50407/xv6-rpi">xv6-rpi</a> will have to be done in the assembly file such as the <code class="highlighter-rouge">load_pgtbl</code> function.</p>
+<p>We port over entry.S, start.c, and main.c to Plan 9. Due to the fact that the Plan 9 compiler does not support inline assembly,
+any code that uses it in xv6-rpi will have to be done in the assembly file such as the load_pgtbl() function.</p>
 
 <figure class="highlight"><pre><code class="language-assembly" data-lang="assembly">#include "memlayout.h"
 #include "arm.h"
@@ -603,12 +603,12 @@ TEXT jump_stack(SB), 1, $-4
 </span>	<span class="n">jump_stack</span><span class="p">();</span>
 <span class="p">}</span></code></pre></figure>
 
-<p>We start in <code class="highlighter-rouge">_start</code> on bootup and we clear out the memory for the data structures we will setup for the MMU and stack.
-Then we jump to <code class="highlighter-rouge">start</code> in C to make it easier to setup the data structure for the MMU. 
-<code class="highlighter-rouge">start</code> will setup the pages for <a href="http://wiki.osdev.org/Identity_Paging">identity mapping</a> using <code class="highlighter-rouge">set_bootpgtbl</code> and then call <code class="highlighter-rouge">load_pgtbl</code> to tell the CPU
-of where the page tables are and enable the MMU. We then call <code class="highlighter-rouge">jump_stack</code> to switch over to the virtual address
-space by setting up the stack pointer and program counter to be inside the virtual address space. We then call <code class="highlighter-rouge">kmain</code>
-and inside <code class="highlighter-rouge">kmain</code>, test various constructs such as global variable access, string constants, and pointer dereferencing.</p>
+<p>We start in _start on bootup and we clear out the memory for the data structures we will setup for the MMU and stack.
+Then we jump to start() in C to make it easier to setup the data structure for the MMU. 
+start() will setup the pages for <a href="http://wiki.osdev.org/Identity_Paging">identity mapping</a> using set_bootpgtbl() and then call load_pgtbl() to tell the CPU
+of where the page tables are and enable the MMU. We then call jump_stack() to switch over to the virtual address
+space by setting up the stack pointer and program counter to be inside the virtual address space. We then call kmain()
+and inside kmain(), test various constructs such as global variable access, string constants, and pointer dereferencing.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/* kmain.c */</span>
 

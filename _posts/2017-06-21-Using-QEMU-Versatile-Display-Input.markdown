@@ -223,12 +223,12 @@ Memory map that we will use:
 Since we are operating without an MMU, we can just create a pointer to these addresses and write to it directly.
 
 ### UART
-UART provides serial output which we route to stdio using the QEMU command line flag ***-serial stdio***. We only use
-the DATA register to output to UART since we use it only for printing to standard output for debugging.
+UART provides serial output which we route to stdio using the QEMU command line flag ***-serial stdio***. Only
+the DATA register is used for outputting to UART for printing to stdout.
 
 To use the UART DATA register, we just need to write to the register the character we want to output, QEMU should then
 print it out to standard output. We only use UART0 for terminal output, so the other UARTs are left unused, but using those
-would be the same code, just different register offsets. Here is the link to the [UART data sheet].
+would be the same code; just at different register offsets. Here is the link to the [UART data sheet].
 
 {% highlight c %}
 // uart.c
@@ -286,8 +286,9 @@ uartputc(Uart *u, int c)
 
 ### Timer
 The timers contain a monotonic counter that ticks with a fixed period, enabling us to keep track of elapsed time.
-We use it to implement delays for the CLCD display controller, to let it refresh. Since we only need to sleep in a single
-threaded context, we only use one timer. We setup the timer to be 32 bit resolution and enable it for the first timer. By
+We use it to implement delays for the CLCD display controller for refreshing the screen. 
+Since we only need to sleep in a single threaded context, 
+only one timer is needed. We setup the timer to be 32 bit resolution and enable it for the first timer. By
 default, the timer ticks at 1 MHZ a second so we just need to read the current value in a loop to get the delay we need.
 Here is the link to the [Timer data sheet].
 
@@ -375,7 +376,8 @@ microdelay(int n)
 {% endhighlight %}
 
 ### CLCD
-CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free area for the framebuffer. We enable and disable the display during drawing so we do not see the partial updates which shows tearing. We use the frame buffer to implement the familiar setpixel() and fillrect() on top of it. The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the [CLCD data sheet].
+CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free memory area for the framebuffer. We also need to enable and disable the display during drawing so we do not see the partial updates which shows tearing. The frame buffer is used as a building block for the familiar 
+setpixel() and fillrect(). The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the [CLCD data sheet].
 
 {% highlight c %}
 // clcd.c
