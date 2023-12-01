@@ -1,0 +1,25 @@
+CC=5c
+LD=5l
+O=5
+AS=5a
+
+TARG=plan9
+loadaddr=0x80010000
+
+%.$O: %.c
+	$CC $CFLAGS $stem.c
+
+%.$O: %.s
+	$AS $ASFLAGS $stem.s
+
+OBJ=\
+	entry.$O\
+	start.$O\
+	main.$O\
+
+all: $OBJ
+	$LD -o $TARG -H6 -T$loadaddr -R4096 -l $OBJ
+	$LD -o $TARG.out -T$loadaddr -R4096 -l $OBJ
+
+clean:
+	rm -f $TARG $TARG.out $OBJ

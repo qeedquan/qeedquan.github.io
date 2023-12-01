@@ -1,0 +1,9 @@
+#define NO_INT 0xc0
+
+#define SVC_MODE 0x13
+
+#define DEVBASE 0x10000000
+#define DEV_MEM_SZ 0x08000000
+#define VEC_TBL 0xFFFF0000
+
+#define UART0 0x101f1000

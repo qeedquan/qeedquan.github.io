@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>How to create flat ARM binaries in Plan 9</title>
+  <meta name="description" content="Flat binaries are program executables that do not contain an executable header such as ELF or PE. Flat binaries are loaded directly into memory and executed....">
+
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="canonical" href="http://qeedquan.github.io/plan9/arm/binary/2017/05/29/Plan9-Flat-ARM-Binaries.html">
+  <link rel="alternate" type="application/rss+xml" title="Notes" href="http://qeedquan.github.io/feed.xml">
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Notes</a>
+
+    <nav class="site-nav">
+      <a href="#" class="menu-icon">
+        <svg viewBox="0 0 18 15">
+          <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"/>
+          <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"/>
+          <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"/>
+        </svg>
+      </a>
+
+      <div class="trigger">
+        
+          
+        
+          
+        
+      </div>
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <div class="page-content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">How to create flat ARM binaries in Plan 9</h1>
+    <p class="post-meta"><time datetime="2017-05-29T00:00:00-04:00" itemprop="datePublished">May 29, 2017</time></p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>Flat binaries are program executables that do not contain an executable header such as ELF or PE. Flat binaries are loaded directly into memory and executed. 
+Boot loaders and kernels are examples of software that are created as flat binaries for loading.</p>
+
+<p>This tutorial will show how to create a flat ARM binary using the Plan 9 toolchain. We based our example code from a tutorial <a href="https://balau82.wordpress.com/2010/02/28/hello-world-for-bare-metal-arm-using-qemu/">here</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/* test.c */</span>
+
+<span class="cp">#define UART0 ((void*) 0x101f1000)
+</span>
+<span class="k">typedef</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">u32</span><span class="p">;</span>
+
+<span class="cp">#define nelem(x) (sizeof(x)/sizeof(x[0]))
+</span>
+<span class="kt">void</span>
+<span class="nf">println</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">s</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="k">volatile</span> <span class="n">u32</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="n">UART0</span><span class="p">;</span>
+	<span class="k">for</span> <span class="p">(;</span> <span class="o">*</span><span class="n">s</span><span class="p">;</span> <span class="n">s</span><span class="o">++</span><span class="p">)</span>
+		<span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">*</span><span class="n">s</span><span class="p">;</span>
+	<span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="sc">'\n'</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="cm">/* 
+ * Test that we set everything up correctly in startup.s
+ * We should be able to access strings if we did
+ */</span>
+
+<span class="k">static</span> <span class="kt">char</span> <span class="o">*</span><span class="n">str1</span> <span class="o">=</span> <span class="s">"str1"</span><span class="p">;</span>
+
+<span class="kt">char</span> <span class="n">str2</span><span class="p">[]</span> <span class="o">=</span> <span class="s">"str2"</span><span class="p">;</span>
+
+<span class="kt">char</span> <span class="o">*</span><span class="n">strtab</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+	<span class="s">"tab1"</span><span class="p">,</span>
+	<span class="s">"tab2"</span><span class="p">,</span>
+	<span class="s">"tab3"</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="kt">void</span>
+<span class="nf">test</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+
+	<span class="n">println</span><span class="p">(</span><span class="s">"Hello from Plan 9"</span><span class="p">);</span>
+	<span class="n">println</span><span class="p">(</span><span class="n">str1</span><span class="p">);</span>
+	<span class="n">println</span><span class="p">(</span><span class="n">str2</span><span class="p">);</span>
+	<span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nelem</span><span class="p">(</span><span class="n">strtab</span><span class="p">);</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
+		<span class="n">println</span><span class="p">(</span><span class="n">strtab</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+<span class="p">}</span></code></pre></figure>
+
+<figure class="highlight"><pre><code class="language-asm" data-lang="asm">/* startup.s */
+
+TEXT start(SB), 1, $0
+	/* 
+	 * 5c will generate accesses to global strings using R12 (IP) 
+	 * as a lookup register, so the linker has pre-defined this 
+	 * address for us that we need to set for R12 on startup
+	 */
+	MOVW    $setR12(SB), R12
+
+	/* setup stack and jump to C */
+	MOVW    $0x20000, SP
+	BL      test(SB)
+
+	/* loop forever doing nothing */
+loop:
+	B       loop</code></pre></figure>
+
+<p>Now we can compile and link test.c and startup.s using the following commands:</p>
+
+<figure class="highlight"><pre><code class="language-shell" data-lang="shell"><span class="c"># Plan 9 commands</span>
+
+<span class="c"># compile the C code into an object file</span>
+5c test.c
+
+<span class="c"># assemble the assembly code into an object file</span>
+5a startup.s
+
+<span class="c"># link the object files together, the obj order passed to the linker is important here,</span>
+<span class="c"># since the link order starts at the text address and increases orderly</span>
+<span class="c"># -l:       don't load in the startup linkage code and other libraries</span>
+<span class="c"># -H n:     6 means create a flat binary with no header with padding, alternatively 0 can be used also</span>
+<span class="c"># -T addr:  the addresses that the code generated will be relative to this, since qemu loads the code at 0x10000, put it relative to there</span>
+<span class="c"># -R pad :  align the text segment to 4096 bytes, the data section will come after this padding</span>
+5l -o plan9.bin -l -H6 -T0x10000 -R4096 startup.5 test.5
+
+<span class="c"># generate a standard a.out format so we can disassemble it to verify correctness</span>
+5l -o plan9.out -l -T0x10000 -R4096 startup.5 test.5</code></pre></figure>
+
+<p>Now that we have generated the plan9.bin binary, the next step is to check if it is valid assembly.
+Since Plan 9 does not have a simple command to dump the assembly, we will resort to a sleazy hack to get the disassembly. We use <a href="https://github.com/qeedquan/debug/blob/master/9front/aout2elf.go">aout2elf</a> to convert it to an ELF binary for objdump to understand.</p>
+
+<figure class="highlight"><pre><code class="language-asm" data-lang="asm"># Unix commands
+
+$ aout2elf plan9.out
+$ arm-none-eabi-objdump -D plan9.elf 
+
+plan9.elf:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+00010000 &lt;start&gt;:
+   10000:	e52de004 	push	{lr}		; (str lr, [sp, #-4]!)
+   10004:	e59fc08c 	ldr	ip, [pc, #140]	; 10098 &lt;test+0x4c&gt;
+   10008:	e3a0d802 	mov	sp, #131072	; 0x20000
+   1000c:	eb00000e 	bl	1004c &lt;test&gt;
+   10010:	eafffffe 	b	10010 &lt;start+0x10&gt;
+
+00010014 &lt;println&gt;:
+   10014:	e52de008 	str	lr, [sp, #-8]!
+   10018:	e59f507c 	ldr	r5, [pc, #124]	; 1009c &lt;test+0x50&gt;
+   1001c:	e1a04000 	mov	r4, r0
+   10020:	e1d430d0 	ldrsb	r3, [r4]
+   10024:	e3530000 	cmp	r3, #0
+   10028:	0a000004 	beq	10040 &lt;println+0x2c&gt;
+   1002c:	e0d420d1 	ldrsb	r2, [r4], #1
+   10030:	e5852000 	str	r2, [r5]
+   10034:	e1d430d0 	ldrsb	r3, [r4]
+   10038:	e3530000 	cmp	r3, #0
+   1003c:	1afffffa 	bne	1002c &lt;println+0x18&gt;
+   10040:	e3a0100a 	mov	r1, #10
+   10044:	e5851000 	str	r1, [r5]
+   10048:	e49df008 	ldr	pc, [sp], #8
+
+0001004c &lt;test&gt;:
+   1004c:	e52de00c 	str	lr, [sp, #-12]!
+   10050:	e59f0048 	ldr	r0, [pc, #72]	; 100a0 &lt;test+0x54&gt;
+   10054:	ebffffee 	bl	10014 &lt;println&gt;
+   10058:	e51c0fe8 	ldr	r0, [ip, #-4072]	; 0xfffff018
+   1005c:	ebffffec 	bl	10014 &lt;println&gt;
+   10060:	e59f003c 	ldr	r0, [pc, #60]	; 100a4 &lt;test+0x58&gt;
+   10064:	ebffffea 	bl	10014 &lt;println&gt;
+   10068:	e3a04000 	mov	r4, #0
+   1006c:	e3540003 	cmp	r4, #3
+   10070:	aa000006 	bge	10090 &lt;test+0x44&gt;
+   10074:	e58d4008 	str	r4, [sp, #8]
+   10078:	e59f2028 	ldr	r2, [pc, #40]	; 100a8 &lt;test+0x5c&gt;
+   1007c:	e7920104 	ldr	r0, [r2, r4, lsl #2]
+   10080:	ebffffe3 	bl	10014 &lt;println&gt;
+   10084:	e59d4008 	ldr	r4, [sp, #8]
+   10088:	e2844001 	add	r4, r4, #1
+   1008c:	eafffff6 	b	1006c &lt;test+0x20&gt;
+   10090:	e49df00c 	ldr	pc, [sp], #12
+   10094:	eafffffe 	b	10094 &lt;test+0x48&gt;
+   10098:	00011ffc 	strdeq	r1, [r1], -ip
+   1009c:	101f1000 	andsne	r1, pc, r0
+   100a0:	0001102c 	andeq	r1, r1, ip, lsr #32
+   100a4:	0001100c 	andeq	r1, r1, ip
+   100a8:	00011000 	andeq	r1, r1, r0
+   100ac:	00000000 	andeq	r0, r0, r0
+
+Disassembly of section .data:
+
+00011000 &lt;bdata&gt;:
+   11000:	0001101d 	andeq	r1, r1, sp, lsl r0
+   11004:	00011022 	andeq	r1, r1, r2, lsr #32
+   11008:	00011027 	andeq	r1, r1, r7, lsr #32
+
+0001100c &lt;str2&gt;:
+   1100c:	32727473 	rsbscc	r7, r2, #1929379840	; 0x73000000
+   11010:	00000000 	andeq	r0, r0, r0
+
+00011014 &lt;str1&gt;:
+   11014:	00011018 	andeq	r1, r1, r8, lsl r0
+
+00011018 &lt;.string&gt;:
+   11018:	31727473 	cmncc	r2, r3, ror r4
+   1101c:	62617400 	rsbvs	r7, r1, #0, 8
+   11020:	61740031 	cmnvs	r4, r1, lsr r0
+   11024:	74003262 	strvc	r3, [r0], #-610	; 0xfffffd9e
+   11028:	00336261 	eorseq	r6, r3, r1, ror #4
+   1102c:	6c6c6548 	cfstr64vs	mvdx6, [ip], #-288	; 0xfffffee0
+   11030:	7266206f 	rsbvc	r2, r6, #111	; 0x6f
+   11034:	50206d6f 	eorpl	r6, r0, pc, ror #26
+   11038:	206e616c 	rsbcs	r6, lr, ip, ror #2
+   1103c:	00000039 	andeq	r0, r0, r9, lsr r0</code></pre></figure>
+
+<p>Everything seems correct, so we run it through qemu and we should see the expected output.</p>
+
+<figure class="highlight"><pre><code class="language-shell" data-lang="shell"><span class="c"># Unix commands</span>
+<span class="gp">$ </span>qemu-system-arm -M versatilepb -m 128M -nographic -kernel plan9.bin
+Hello from Plan 9
+str1
+str2
+tab1
+tab2
+tab3
+<span class="c"># 'Ctrl-A' and then 'x' to exit</span>
+QEMU: Terminated</code></pre></figure>
+
+
+  </div>
+
+</article>
+
+      </div>
+    </div>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Notes</h2>
+
+	<div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>
+            
+              Quan Tran
+            
+            </li>
+            
+            <li><a href="mailto:qeed.quan@gmail.com">qeed.quan@gmail.com</a></li>
+            
+        </ul>
+	</div>
+
+	<div class="footer-col footer-col-2">
+		<ul class="social-media-list">
+          
+          <li>
+            <a href="https://github.com/qeedquan"><span class="icon icon--github"><svg viewBox="0 0 16 16"><path fill="#828282" d="M7.999,0.431c-4.285,0-7.76,3.474-7.76,7.761 c0,3.428,2.223,6.337,5.307,7.363c0.388,0.071,0.53-0.168,0.53-0.374c0-0.184-0.007-0.672-0.01-1.32 c-2.159,0.469-2.614-1.04-2.614-1.04c-0.353-0.896-0.862-1.135-0.862-1.135c-0.705-0.481,0.053-0.472,0.053-0.472 c0.779,0.055,1.189,0.8,1.189,0.8c0.692,1.186,1.816,0.843,2.258,0.645c0.071-0.502,0.271-0.843,0.493-1.037 C4.86,11.425,3.049,10.76,3.049,7.786c0-0.847,0.302-1.54,0.799-2.082C3.768,5.507,3.501,4.718,3.924,3.65 c0,0,0.652-0.209,2.134,0.796C6.677,4.273,7.34,4.187,8,4.184c0.659,0.003,1.323,0.089,1.943,0.261 c1.482-1.004,2.132-0.796,2.132-0.796c0.423,1.068,0.157,1.857,0.077,2.054c0.497,0.542,0.798,1.235,0.798,2.082 c0,2.981-1.814,3.637-3.543,3.829c0.279,0.24,0.527,0.713,0.527,1.437c0,1.037-0.01,1.874-0.01,2.129 c0,0.208,0.14,0.449,0.534,0.373c3.081-1.028,5.302-3.935,5.302-7.362C15.76,3.906,12.285,0.431,7.999,0.431z"/></svg>
+</span><span class="username">qeedquan</span></a>
+
+          </li>
+          
+
+          
+		  
+          
+          <li>
+            <a href="https://www.linkedin.com/in/quan-tran-15a72831"><span class="icon icon--linkedin"><svg viewBox="0 0 512 512"><path fill="#ffb577" d="M186.4 142.4c0 19-15.3 34.5-34.2 34.5 -18.9 0-34.2-15.4-34.2-34.5 0-19 15.3-34.5 34.2-34.5C171.1 107.9 186.4 123.4 186.4 142.4zM181.4 201.3h-57.8V388.1h57.8V201.3zM273.8 201.3h-55.4V388.1h55.4c0 0 0-69.3 0-98 0-26.3 12.1-41.9 35.2-41.9 21.3 0 31.5 15 31.5 41.9 0 26.9 0 98 0 98h57.5c0 0 0-68.2 0-118.3 0-50-28.3-74.2-68-74.2 -39.6 0-56.3 30.9-56.3 30.9v-25.2H273.8z"/></svg>
+</span><span class="username">qeedquan</span></a>
+
+          </li>
+          
+        </ul>
+      </div>
+
+	  <div class="footer-col footer-col-3">
+        <p></p>
+	  </div>
+	</div>
+  
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

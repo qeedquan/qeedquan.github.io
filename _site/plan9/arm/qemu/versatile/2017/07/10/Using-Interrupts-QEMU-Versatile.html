@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Using Interrupts on the QEMU Versatile board</title>
+  <meta name="description" content="Interrupts are an important component of a computer system. It enables interactivity, priorities, and preemption forthe executing task. Interrupts allowing o...">
+
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="canonical" href="http://qeedquan.github.io/plan9/arm/qemu/versatile/2017/07/10/Using-Interrupts-QEMU-Versatile.html">
+  <link rel="alternate" type="application/rss+xml" title="Notes" href="http://qeedquan.github.io/feed.xml">
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Notes</a>
+
+    <nav class="site-nav">
+      <a href="#" class="menu-icon">
+        <svg viewBox="0 0 18 15">
+          <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"/>
+          <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"/>
+          <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"/>
+        </svg>
+      </a>
+
+      <div class="trigger">
+        
+          
+        
+          
+        
+      </div>
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <div class="page-content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">Using Interrupts on the QEMU Versatile board</h1>
+    <p class="post-meta"><time datetime="2017-07-10T00:00:00-04:00" itemprop="datePublished">Jul 10, 2017</time></p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>Interrupts are an important component of a computer system. It enables interactivity, priorities, and preemption for
+the executing task. Interrupts allowing one to switch out tasks, have periodic timer events, notifications of when
+network packets appear, and much more. Most devices on the computer have the ability of generating an interrupt to notify
+the processor a state change.</p>
+
+<p>This tutorial will show how to use the interrupts for the <a href="https://github.com/qemu/qemu/blob/master/hw/arm/versatilepb.c">QEMU Versatile</a>. The code is based on the previous <a href="https://qeedquan.github.io/plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">article</a>,
+except we will use interrupts for keyboard/mouse events and enable timer interrupts.</p>
+
+<h3 id="main">Main</h3>
+
+<p>Initialization stays the same for the most part as the previous <a href="https://qeedquan.github.io/plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">article</a>,
+but now we initialize the interrupts with <code class="highlighter-rouge">trapinit</code> and enable them in <code class="highlighter-rouge">intrson</code>.</p>
+
+<p>In our <code class="highlighter-rouge">main</code>, we get rid of <code class="highlighter-rouge">event</code> handling and instead use interrupt
+for keyboard and mouse events. The one shot timer interrupt is also exercised
+using the <code class="highlighter-rouge">schedevent</code> function to schedule a one shot timer interrupt <code class="highlighter-rouge">sc</code> milliseconds
+from now. We will cover these functions more in depth later in the tutorial.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// main.c
+</span>
+<span class="kt">void</span>
+<span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u32</span> <span class="n">sc</span><span class="p">;</span>
+
+	<span class="c1">// setup UART for printing to terminal
+</span>	<span class="n">uartinit</span><span class="p">();</span>
+
+	<span class="c1">// initialize interrupt handlers
+</span>	<span class="n">trapinit</span><span class="p">();</span>
+
+	<span class="c1">// setup timer so we can sleep
+</span>	<span class="n">timerinit</span><span class="p">();</span>
+
+	<span class="c1">// setup the display so we can draw to the screen
+</span>	<span class="n">clcdinit</span><span class="p">();</span>
+
+	<span class="c1">// setup keyboard and mouse
+</span>	<span class="n">inputinit</span><span class="p">();</span>
+
+	<span class="c1">// enable interrupts
+</span>	<span class="n">intrson</span><span class="p">();</span>
+
+	<span class="c1">// game style loop
+</span>	<span class="n">sc</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">;</span>
+	<span class="k">for</span> <span class="p">(;;)</span> <span class="p">{</span>
+		<span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">scheduled</span><span class="p">)</span> <span class="p">{</span>
+			<span class="n">schedevent</span><span class="p">(</span><span class="n">sc</span><span class="p">);</span>
+			<span class="n">sc</span> <span class="o">+=</span> <span class="mi">1000</span><span class="p">;</span>
+			<span class="k">if</span> <span class="p">(</span><span class="n">sc</span> <span class="o">&gt;=</span> <span class="mi">1000</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
+				<span class="n">sc</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">;</span>
+		<span class="p">}</span>
+		<span class="n">draw</span><span class="p">();</span>
+	<span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="interrupt-handlers">Interrupt handlers</h3>
+
+<p>We based our exception handling code from the <a href="https://code.9front.org/hg/plan9front/file/d44f7b86e2ba/sys/src/9/bcm">Plan9 BCM</a> port, which uses a CPU that has basically the same features
+as the Versatile architecture when dealing with interrupts.</p>
+
+<p>Interrupts are initialized in the <code class="highlighter-rouge">trapinit</code> function. <code class="highlighter-rouge">trapinit</code> sets up the exception handler for ARM and the stacks
+for them on execution. Since we do not care about any other exceptions, we stub them all out except
+for the IRQ exception which the CPU will jump to on an interrupt trigger.</p>
+
+<p>By default, ARM expects the exception handler to be place at address 0x0, but due to the Plan9 linker limitation, we can’t
+just place the exception table at 0x0, so we define the exception handler tables in <code class="highlighter-rouge">lexception.s</code> called <code class="highlighter-rouge">vectors</code>
+that sets the PC to the exception handler address defined in <code class="highlighter-rouge">vtable</code>.</p>
+
+<p>Afterwards, we set up the stacks for the interrupts with <code class="highlighter-rouge">setr13</code>. When an exception occurs, ARM will switch mode and use a different set of banked registers, which includes the stack pointer. We only give enough stack space to save the registers
+R0-R4 because we intend to use them as scratch register to switch to supervisor (svc) mode. Afterwards, we will be using
+the stack we setup in <code class="highlighter-rouge">l.s</code> before we called <code class="highlighter-rouge">main</code>.</p>
+
+<p>Then we need to enable the secondary interrupt controller. The Versatile has two interrupt controllers, a primary
+one and a secondary one that sends its interrupt to the primary one, but to do that, we would need to enable it first.
+The keyboard and mouse interrupts are in the secondary interrupt controller.</p>
+
+<p>After we setup everything, interrupts will occur inside <code class="highlighter-rouge">_virq</code> handler inside <code class="highlighter-rouge">lexception.s</code>, which will call <code class="highlighter-rouge">trap</code> function to handle the interrupt in C. We enable the interrupts we want to handle by writing to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0181e/DDI0181.pdf">PL190 Interrupt Controller</a>
+register to enable them. The function <code class="highlighter-rouge">intrenable</code> connects a function handler for an interrupt line. The interrupt line
+is defined in the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.dui0225d/DUI0225D_versatile_application_baseboard_arm926ej_s_ug.pdf">Versatile Datasheet</a>.</p>
+
+<p>For a more detailed information about the ARM exception handling and interrupt lines, refer to the following docs:
+<a href="http://infocenter.arm.com/help/topic/com.arm.doc.dui0225d/DUI0225D_versatile_application_baseboard_arm926ej_s_ug.pdf">Versatile Datasheet</a>, <a href="http://osnet.cs.nchu.edu.tw/powpoint/Embedded94_1/Chapter%207%20ARM%20Exceptions.pdf">ARM Exception Tutorial</a>, and <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0181e/DDI0181.pdf">PL190 Interrupt Controller</a>.</p>
+
+<figure class="highlight"><pre><code class="language-assembly" data-lang="assembly">// lexception.s
+
+#include "arm.h"
+
+// exception table containing branches to code
+// that contain the exception handler code. 
+// The offset is 0x18 because ARM stores the PC 2 instructions (8 bytes)
+// ahead when it is accessed this way.  (24 + 8) = 32 bytes
+// The offset points to the vtable structure.
+TEXT vectors(SB), 1, $-4
+	MOVW 0x18(R15), R15
+	MOVW 0x18(R15), R15
+	MOVW 0x18(R15), R15
+	MOVW 0x18(R15), R15
+	MOVW 0x18(R15), R15
+	MOVW 0x18(R15), R15
+	MOVW 0x18(R15), R15
+
+// table that contains the addreses
+// for the exception handler 
+TEXT vtable(SB), 1, $-4
+	WORD $_vrst(SB)  // reset
+	WORD $_vund(SB)  // undefined
+	WORD $_vsvc(SB)  // swi
+	WORD $_vpabt(SB) // prefetch abort
+	WORD $_vdabt(SB) // data abort
+	WORD $_vsvc(SB)  // reserved
+	WORD $_virq(SB)  // irq
+	WORD $_vfiq(SB)  // fiq
+
+// reset vector
+TEXT _vrst(SB), 1, $-4
+	B 0(PC)
+	RFE
+
+// undefined vector
+TEXT _vund(SB), 1, $-4
+	MOVM.IA	[R0-R4], (R13)
+	MOVW $PsrMund, R0
+	B _vswitch
+
+// swi interrupt vector
+TEXT _vsvc(SB), 1, $-4
+	B 0(PC)
+	RFE
+
+// prefetch abort vector
+TEXT _vpabt(SB), 1, $-4
+	MOVM.IA	[R0-R4], (R13)
+	MOVW $PsrMabt, R0
+	B _vswitch
+
+// data abort vector
+TEXT _vdabt(SB), 1, $-4
+	MOVM.IA	[R0-R4], (R13)
+	MOVW $(PsrMabt+1), R0
+	B _vswitch
+
+// irq vector
+TEXT _virq(SB), 1, $-4
+	MOVM.IA	[R0-R4], (R13)
+	MOVW $PsrMirq, R0		/* r0 = type */
+	B _vswitch
+
+_vswitch:
+	// when we get here, the stack we are using
+	// is from setr13, which we only allocate enough
+	// just to store the registers, we will use the
+	// svc mode stack for all the heavy processing
+	
+	// save SPSR for ureg
+	MOVW SPSR, R1
+	// save interrupted PC for ureg
+	MOVW R14, R2
+	// save pointer to where [R0-R4] are
+	MOVW R13, R3
+	
+	// disable interrupts at this point
+	// we don't nest interrupts
+	// and switch to svc mode
+	// in this context, we are already in svc
+	// mode already though
+	MOVW CPSR, R14
+	BIC	$PsrMask, R14
+	ORR	$(PsrDirq|PsrMsvc), R14
+	MOVW R14, CPSR
+	
+	// when we get here, we are no longer using the
+	// stack that was defined using setr13, but using
+	// the svc stack, which was setup in l.s before we
+	// call main
+	
+	// set ureg-&gt;{type, psr, pc}; r13 points to ureg-&gt;type
+	MOVM.DB.W [R0-R2], (R13)
+
+	// restore [R0-R4] from previous mode's stack
+	MOVM.IA (R3), [R0-R4]
+	
+	// in order to get a predictable value in R13 after the stores,
+	// separate the store-multiple from the stack-pointer adjustment
+	// we'll assume that the old value of R13 should be stored on the stack
+	
+	// save kernel level registers, at end r13 points to ureg
+	MOVM.DB	[R0-R14], (R13)
+	// SP now points to saved R0
+	SUB	$(15*4), R13
+	
+	// first arg is pointer to ureg
+	MOVW R13, R0
+
+	BL trap(SB)
+	
+	// make r13 point to ureg-&gt;type
+	ADD	$(4*15), R13
+	
+	// restore link
+	MOVW 8(R13), R14
+
+	// restore SPSR
+	MOVW 4(R13), R0
+	MOVW R0, SPSR
+	
+	// restore register
+	MOVM.DB (R13), [R0-R14]
+	// pop past ureg-&gt;{type+psr} to pc
+	ADD	$(4*2), R13	
+	
+	// return from exception
+	RFE
+
+// fiq vector
+TEXT _vfiq(SB), 1, $-4
+	B 0(PC)
+	RFE
+
+// set the stack value for the mode passed in R0
+TEXT setr13(SB), 1, $-4
+	// R1 = stack address that we are going to set for
+	// the exception handler
+	MOVW 4(FP), R1
+
+	// save the current execution mode in R2
+	// then switch to new mode by clearing out
+	// the mode and ORing it with the mode we want
+	// R2 = execution mode
+	MOVW CPSR, R2
+	BIC	$PsrMask, R2, R3
+	ORR	R0, R3
+	// switch to new mode
+	MOVW R3, CPSR
+
+	// return old sp
+	MOVW R13, R0
+	// install new sp
+	MOVW R1, R13
+
+	// switch back to old mode
+	MOVW R2, CPSR
+	RET</code></pre></figure>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// trap.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="k">enum</span> <span class="p">{</span>
+	<span class="n">SICREGS</span> <span class="o">=</span> <span class="mh">0x10003000</span><span class="p">,</span>
+	<span class="n">INTREGS</span> <span class="o">=</span> <span class="mh">0x10140000</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">enum</span> <span class="p">{</span>
+	<span class="n">SICSTAT</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+	<span class="n">SICRAWSTAT</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+	<span class="n">SICENABLE</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+	<span class="n">SICSOFTINT</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+	<span class="n">SICPICENABLE</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+
+	<span class="n">SICENSET</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+	<span class="n">SICENCLR</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+	<span class="n">SICSOFTINTSET</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
+	<span class="n">SICSOFTINCLR</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+	<span class="n">SICPICENSET</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+	<span class="n">SICPICENCLR</span> <span class="o">=</span> <span class="mi">9</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">enum</span> <span class="p">{</span>
+	<span class="n">INTSTAT</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+	<span class="n">FIQSTAT</span><span class="p">,</span>
+	<span class="n">INTRAW</span><span class="p">,</span>
+	<span class="n">INTSELECT</span><span class="p">,</span>
+	<span class="n">INTENABLE</span><span class="p">,</span>
+	<span class="n">INTCLEAR</span><span class="p">,</span>
+	<span class="n">SOFTINT</span><span class="p">,</span>
+	<span class="n">SOFTINTCLEAR</span><span class="p">,</span>
+	<span class="n">PROTECTION</span><span class="p">,</span>
+	<span class="n">VECTADDR</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">enum</span> <span class="p">{</span>
+	<span class="c1">// # of vectors at start of lexception.s
+</span>	<span class="n">NVEC</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+
+	<span class="c1">// # number of interrupt lines
+</span>	<span class="n">NINTR</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// interrupt vectors
+</span><span class="k">static</span> <span class="n">Vctl</span> <span class="n">vctls</span><span class="p">[</span><span class="n">NINTR</span><span class="p">];</span>
+
+<span class="c1">// save areas for exceptions, hold R0-R4
+</span><span class="k">static</span> <span class="n">u32</span> <span class="n">sfiq</span><span class="p">[</span><span class="mi">4096</span><span class="p">];</span>
+<span class="k">static</span> <span class="n">u32</span> <span class="n">sirq</span><span class="p">[</span><span class="mi">5</span><span class="p">];</span>
+<span class="k">static</span> <span class="n">u32</span> <span class="n">sund</span><span class="p">[</span><span class="mi">5</span><span class="p">];</span>
+<span class="k">static</span> <span class="n">u32</span> <span class="n">sabt</span><span class="p">[</span><span class="mi">5</span><span class="p">];</span>
+<span class="k">static</span> <span class="n">u32</span> <span class="n">smon</span><span class="p">[</span><span class="mi">5</span><span class="p">];</span>
+<span class="k">static</span> <span class="n">u32</span> <span class="n">ssys</span><span class="p">[</span><span class="mi">5</span><span class="p">];</span>
+
+<span class="c1">// layout of vector table
+</span><span class="k">typedef</span> <span class="k">struct</span> <span class="n">Vpage0</span> <span class="p">{</span>
+	<span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">vectors</span><span class="p">[</span><span class="n">NVEC</span><span class="p">])(</span><span class="kt">void</span><span class="p">);</span>
+	<span class="n">u32</span> <span class="n">vtable</span><span class="p">[</span><span class="n">NVEC</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">Vpage0</span><span class="p">;</span>
+
+<span class="c1">// initializes interrupt handling
+</span><span class="kt">void</span>
+<span class="nf">trapinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u32</span> <span class="o">*</span><span class="n">sic</span><span class="p">;</span>
+	<span class="n">Vpage0</span> <span class="o">*</span><span class="n">vpage0</span><span class="p">;</span>
+
+	<span class="c1">// turn off interrupts
+</span>	<span class="n">intrsoff</span><span class="p">();</span>
+
+	<span class="c1">// the exception table is stored at address 0
+</span>	<span class="n">vpage0</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">;</span>
+	<span class="n">memmove</span><span class="p">(</span><span class="n">vpage0</span><span class="o">-&gt;</span><span class="n">vectors</span><span class="p">,</span> <span class="n">vectors</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">vpage0</span><span class="o">-&gt;</span><span class="n">vectors</span><span class="p">));</span>
+	<span class="n">memmove</span><span class="p">(</span><span class="n">vpage0</span><span class="o">-&gt;</span><span class="n">vtable</span><span class="p">,</span> <span class="n">vtable</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">vpage0</span><span class="o">-&gt;</span><span class="n">vtable</span><span class="p">));</span>
+	<span class="n">cacheuwbinv</span><span class="p">();</span>
+
+	<span class="c1">// set up the stacks for the interrupt modes
+</span>	<span class="n">setr13</span><span class="p">(</span><span class="n">PsrMfiq</span><span class="p">,</span> <span class="n">sfiq</span><span class="p">);</span>
+	<span class="n">setr13</span><span class="p">(</span><span class="n">PsrMirq</span><span class="p">,</span> <span class="n">sirq</span><span class="p">);</span>
+	<span class="n">setr13</span><span class="p">(</span><span class="n">PsrMabt</span><span class="p">,</span> <span class="n">sabt</span><span class="p">);</span>
+	<span class="n">setr13</span><span class="p">(</span><span class="n">PsrMund</span><span class="p">,</span> <span class="n">sund</span><span class="p">);</span>
+	<span class="n">setr13</span><span class="p">(</span><span class="n">PsrMsys</span><span class="p">,</span> <span class="n">ssys</span><span class="p">);</span>
+	<span class="n">coherence</span><span class="p">();</span>
+
+	<span class="c1">// enable secondary interrupts
+</span>	<span class="n">sic</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">SICREGS</span><span class="p">;</span>
+	<span class="n">sic</span><span class="p">[</span><span class="n">SICENSET</span><span class="p">]</span> <span class="o">=</span> <span class="mh">0xffffffff</span><span class="p">;</span>
+	<span class="n">sic</span><span class="p">[</span><span class="n">SICPICENSET</span><span class="p">]</span> <span class="o">=</span> <span class="mh">0xffffffff</span><span class="p">;</span>
+	<span class="n">coherence</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="c1">// turn interrupts on
+</span><span class="kt">void</span>
+<span class="nf">intrson</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">intrenable</span><span class="p">(</span><span class="n">TIMER0IRQ</span><span class="p">,</span> <span class="n">timerintr</span><span class="p">,</span> <span class="n">nil</span><span class="p">,</span> <span class="s">"timer0"</span><span class="p">);</span>
+	<span class="n">intrenable</span><span class="p">(</span><span class="n">TIMER2IRQ</span><span class="p">,</span> <span class="n">timeroneintr</span><span class="p">,</span> <span class="n">nil</span><span class="p">,</span> <span class="s">"timer2"</span><span class="p">);</span>
+	<span class="n">intrenable</span><span class="p">(</span><span class="n">VIC31IRQ</span><span class="p">,</span> <span class="n">inputinr</span><span class="p">,</span> <span class="n">nil</span><span class="p">,</span> <span class="s">"input"</span><span class="p">);</span>
+
+	<span class="n">spllo</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="c1">// turn interrupts off
+</span><span class="kt">void</span>
+<span class="nf">intrsoff</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u32</span> <span class="o">*</span><span class="n">ip</span><span class="p">;</span>
+
+	<span class="n">ip</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">INTREGS</span><span class="p">;</span>
+	<span class="n">ip</span><span class="p">[</span><span class="n">INTCLEAR</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="n">coherence</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="c1">// enable an interrupt line
+</span><span class="kt">void</span>
+<span class="nf">intrenable</span><span class="p">(</span><span class="kt">int</span> <span class="n">irq</span><span class="p">,</span> <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">f</span><span class="p">)(</span><span class="n">Ureg</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">),</span> <span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u32</span> <span class="o">*</span><span class="n">ip</span><span class="p">;</span>
+	<span class="n">Vctl</span> <span class="o">*</span><span class="n">v</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span><span class="n">irq</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">irq</span> <span class="o">&gt;=</span> <span class="n">NINTR</span><span class="p">)</span>
+		<span class="n">panic</span><span class="p">(</span><span class="s">"invalid irq %d"</span><span class="p">,</span> <span class="n">irq</span><span class="p">);</span>
+
+	<span class="n">v</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">vctls</span><span class="p">[</span><span class="n">irq</span><span class="p">];</span>
+	<span class="n">v</span><span class="o">-&gt;</span><span class="n">f</span> <span class="o">=</span> <span class="n">f</span><span class="p">;</span>
+	<span class="n">v</span><span class="o">-&gt;</span><span class="n">a</span> <span class="o">=</span> <span class="n">arg</span><span class="p">;</span>
+	<span class="n">v</span><span class="o">-&gt;</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="p">;</span>
+
+	<span class="n">ip</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">INTREGS</span><span class="p">;</span>
+	<span class="n">ip</span><span class="p">[</span><span class="n">INTENABLE</span><span class="p">]</span> <span class="o">|=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">irq</span><span class="p">);</span>
+	<span class="n">coherence</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="c1">// handle interrupts
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">irq</span><span class="p">(</span><span class="n">Ureg</span> <span class="o">*</span><span class="n">ureg</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Vctl</span> <span class="o">*</span><span class="n">v</span><span class="p">;</span>
+	<span class="n">u32</span> <span class="o">*</span><span class="n">ip</span><span class="p">,</span> <span class="n">i</span><span class="p">;</span>
+
+	<span class="n">ip</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">INTREGS</span><span class="p">;</span>
+	<span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">NINTR</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+		<span class="k">if</span> <span class="p">(</span><span class="n">ip</span><span class="p">[</span><span class="n">INTSTAT</span><span class="p">]</span> <span class="o">&amp;</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">i</span><span class="p">))</span> <span class="p">{</span>
+			<span class="n">v</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">vctls</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
+			<span class="n">v</span><span class="o">-&gt;</span><span class="n">f</span><span class="p">(</span><span class="n">ureg</span><span class="p">,</span> <span class="n">v</span><span class="o">-&gt;</span><span class="n">a</span><span class="p">);</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kt">void</span>
+<span class="nf">trap</span><span class="p">(</span><span class="n">Ureg</span> <span class="o">*</span><span class="n">ureg</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// all interrupts/exceptions should be resumed at ureg-&gt;pc-4,
+</span>	<span class="c1">// except for Data Abort which resumes at ureg-&gt;pc-8.
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">ureg</span><span class="o">-&gt;</span><span class="n">type</span> <span class="o">==</span> <span class="p">(</span><span class="n">PsrMabt</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+		<span class="n">ureg</span><span class="o">-&gt;</span><span class="n">pc</span> <span class="o">-=</span> <span class="mi">8</span><span class="p">;</span>
+	<span class="k">else</span>
+		<span class="n">ureg</span><span class="o">-&gt;</span><span class="n">pc</span> <span class="o">-=</span> <span class="mi">4</span><span class="p">;</span>
+
+	<span class="k">switch</span> <span class="p">(</span><span class="n">ureg</span><span class="o">-&gt;</span><span class="n">type</span><span class="p">)</span> <span class="p">{</span>
+	<span class="k">case</span> <span class="n">PsrMirq</span><span class="p">:</span>
+		<span class="n">irq</span><span class="p">(</span><span class="n">ureg</span><span class="p">);</span>
+		<span class="k">break</span><span class="p">;</span>
+	<span class="nl">default:</span>
+		<span class="n">panic</span><span class="p">(</span><span class="s">"unknown trap: type %x, psr mode %x"</span><span class="p">,</span> <span class="n">ureg</span><span class="o">-&gt;</span><span class="n">type</span><span class="p">,</span> <span class="n">ureg</span><span class="o">-&gt;</span><span class="n">psr</span> <span class="o">&amp;</span> <span class="n">PsrMask</span><span class="p">);</span>
+	<span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="timers-keyboard-mouse-interrupts">Timers, keyboard, mouse interrupts</h3>
+<p>We have setup the interrupt handling system, now we just need to tell the devices to enable the interrupts
+and connect them. For timer, we hook one timer up as a periodic timer, triggering every once a second, and then
+we use another timer as a one-shot timer, usable by <code class="highlighter-rouge">schedevent</code>. We do not need to worry about locking here
+since we do not nesting interrupts and we run on a single core. For keyboard and mouse, we need to enable the RX 
+interrupt. In the interrupt handler for these devices, we need to clear the interrupt register or else
+they will keep the line asserted, generating an interrupt storm.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// timer.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="c1">// timer registers, 32 bit wide
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">LOAD</span> <span class="o">=</span> <span class="mh">0x0</span><span class="p">,</span>
+	<span class="n">VALUE</span><span class="p">,</span>
+	<span class="n">CTRL</span><span class="p">,</span>
+	<span class="n">INTCLR</span><span class="p">,</span>
+	<span class="n">RIS</span><span class="p">,</span>
+	<span class="n">MIS</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// control bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">ENABLE</span> <span class="o">=</span> <span class="mh">0x80</span><span class="p">,</span>
+	<span class="n">PERIODIC</span> <span class="o">=</span> <span class="mh">0x40</span><span class="p">,</span>
+	<span class="n">INTENABLE</span> <span class="o">=</span> <span class="mh">0x20</span><span class="p">,</span>
+	<span class="n">RESLN32</span> <span class="o">=</span> <span class="mh">0x2</span><span class="p">,</span>
+	<span class="n">ONESHOT</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">enum</span> <span class="p">{</span>
+	<span class="n">CLOCKFREQ</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">*</span> <span class="n">MHZ</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="n">Timer</span> <span class="n">phystimer</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x101e2000</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)(</span><span class="mh">0x101e2000</span> <span class="o">+</span> <span class="mh">0x20</span><span class="p">),</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x101e3000</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)(</span><span class="mh">0x101e3000</span> <span class="o">+</span> <span class="mh">0x20</span><span class="p">),</span>
+    <span class="p">},</span>
+<span class="p">};</span>
+
+<span class="c1">// reset the timer
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">reset</span><span class="p">(</span><span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">,</span> <span class="n">bool</span> <span class="n">periodic</span><span class="p">,</span> <span class="n">bool</span> <span class="n">oneshot</span><span class="p">,</span> <span class="n">bool</span> <span class="n">irq</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u32</span> <span class="n">v</span><span class="p">;</span>
+
+	<span class="c1">// if periodic, count at MHZ rate
+</span>	<span class="c1">// 1 interrupt per second
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">periodic</span><span class="p">)</span>
+		<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">LOAD</span><span class="p">]</span> <span class="o">=</span> <span class="n">CLOCKFREQ</span><span class="p">;</span>
+
+	<span class="c1">// enable the device with 32 bit counter wide
+</span>	<span class="n">v</span> <span class="o">=</span> <span class="n">ENABLE</span> <span class="o">|</span> <span class="n">RESLN32</span><span class="p">;</span>
+
+	<span class="c1">// enable irq if we use it
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">irq</span><span class="p">)</span>
+		<span class="n">v</span> <span class="o">|=</span> <span class="n">INTENABLE</span><span class="p">;</span>
+
+	<span class="c1">// enable periodic if we use it
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">periodic</span><span class="p">)</span>
+		<span class="n">v</span> <span class="o">|=</span> <span class="n">PERIODIC</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span><span class="n">oneshot</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">v</span> <span class="o">|=</span> <span class="n">ONESHOT</span><span class="p">;</span>
+		<span class="n">v</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">ENABLE</span><span class="p">;</span>
+	<span class="p">}</span>
+
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// initializes the timer
+</span><span class="kt">void</span>
+<span class="nf">timerinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">false</span><span class="p">,</span> <span class="nb">false</span><span class="p">,</span> <span class="nb">false</span><span class="p">);</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="nb">true</span><span class="p">,</span> <span class="nb">false</span><span class="p">,</span> <span class="nb">true</span><span class="p">);</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="nb">false</span><span class="p">,</span> <span class="nb">true</span><span class="p">,</span> <span class="nb">true</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// delay for n milliseconds
+</span><span class="kt">void</span>
+<span class="nf">delay</span><span class="p">(</span><span class="kt">int</span> <span class="n">n</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="k">while</span> <span class="p">(</span><span class="o">--</span><span class="n">n</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="n">microdelay</span><span class="p">(</span><span class="mi">1000</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// delay for n microseconds
+</span><span class="kt">void</span>
+<span class="nf">microdelay</span><span class="p">(</span><span class="kt">int</span> <span class="n">n</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">;</span>
+	<span class="n">u32</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">;</span>
+
+	<span class="c1">// we do not need to worry about underflow here
+</span>	<span class="c1">// since the unsignedness of the values ensure
+</span>	<span class="c1">// that the wrap around calculation is still right
+</span>	<span class="n">t</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+	<span class="n">a</span> <span class="o">=</span> <span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">VALUE</span><span class="p">];</span>
+	<span class="k">while</span> <span class="p">(</span><span class="n">a</span> <span class="o">-</span> <span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">VALUE</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+		<span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// handle periodic timer interrupt
+</span><span class="kt">void</span>
+<span class="nf">timerintr</span><span class="p">(</span><span class="n">Ureg</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">;</span>
+
+	<span class="n">t</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">INTCLR</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+	<span class="n">iprint</span><span class="p">(</span><span class="s">"timer #1 periodic interrupt</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="kt">int</span> <span class="n">scheduled</span><span class="p">;</span>
+
+<span class="kt">void</span>
+<span class="nf">timeroneintr</span><span class="p">(</span><span class="n">Ureg</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">;</span>
+	<span class="n">t</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">INTCLR</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+	<span class="n">iprint</span><span class="p">(</span><span class="s">"timer #2 one shot interrupt</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+	<span class="n">scheduled</span><span class="o">--</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// schedule event in number of ms from now
+</span><span class="kt">void</span>
+<span class="nf">schedevent</span><span class="p">(</span><span class="n">u32</span> <span class="n">ms</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span><span class="n">scheduled</span><span class="p">)</span>
+		<span class="k">return</span><span class="p">;</span>
+
+	<span class="n">scheduled</span><span class="o">++</span><span class="p">;</span>
+
+	<span class="n">t</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">LOAD</span><span class="p">]</span> <span class="o">=</span> <span class="n">ms</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">;</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">|=</span> <span class="n">ENABLE</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// input.c
+</span><span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="c1">// registers, 32 bit wide
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">CTRL</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+	<span class="n">STAT</span><span class="p">,</span>
+	<span class="n">DATA</span><span class="p">,</span>
+	<span class="n">CLKDIV</span><span class="p">,</span>
+	<span class="n">IR</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// control register bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">ENABLE</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">2</span><span class="p">,</span>
+	<span class="n">INTTX</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">3</span><span class="p">,</span>
+	<span class="n">INTRX</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">4</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// status register bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">RXFULL</span> <span class="o">=</span> <span class="mh">0x10</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">static</span> <span class="n">Input</span> <span class="n">physinput</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x10006000</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x10007000</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">ismouse</span> <span class="o">=</span> <span class="nb">true</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">};</span>
+
+<span class="c1">// send data and drain input
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">send</span><span class="p">(</span><span class="n">Input</span> <span class="o">*</span><span class="n">p</span><span class="p">,</span> <span class="n">u32</span> <span class="n">v</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="p">;</span>
+	<span class="k">while</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">STAT</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">RXFULL</span><span class="p">)</span>
+		<span class="n">v</span> <span class="o">=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">];</span>
+<span class="p">}</span>
+
+<span class="c1">// reset the device
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">reset</span><span class="p">(</span><span class="n">Input</span> <span class="o">*</span><span class="n">p</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// enable and get rx interrupts
+</span>	<span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">=</span> <span class="n">ENABLE</span> <span class="o">|</span> <span class="n">INTRX</span><span class="p">;</span>
+
+	<span class="c1">// this enable the ps2 interface for usage
+</span>	<span class="c1">// without this we won't get the mouse events
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">ismouse</span><span class="p">)</span>
+		<span class="n">send</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mh">0xf4</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// initializes the input
+</span><span class="kt">void</span>
+<span class="nf">inputinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">physinput</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">physinput</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+<span class="p">}</span>
+
+<span class="c1">// polls for input if there is no input
+// set events to 0
+</span><span class="kt">void</span>
+<span class="nf">pollinput</span><span class="p">(</span><span class="n">u32</span> <span class="o">*</span><span class="n">kb</span><span class="p">,</span> <span class="n">u32</span> <span class="o">*</span><span class="n">ms</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Input</span> <span class="o">*</span><span class="n">p</span><span class="p">;</span>
+	<span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+
+	<span class="o">*</span><span class="n">kb</span> <span class="o">=</span> <span class="o">*</span><span class="n">ms</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nelem</span><span class="p">(</span><span class="n">physinput</span><span class="p">);</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">physinput</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
+		<span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">STAT</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">RXFULL</span><span class="p">))</span>
+			<span class="k">continue</span><span class="p">;</span>
+
+		<span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+			<span class="c1">// keyboard just gets raw data
+</span>			<span class="c1">// ignore 0xf0, that is a "end marker"
+</span>			<span class="o">*</span><span class="n">kb</span> <span class="o">=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">];</span>
+			<span class="k">if</span> <span class="p">(</span><span class="o">*</span><span class="n">kb</span> <span class="o">==</span> <span class="mh">0xf0</span><span class="p">)</span>
+				<span class="o">*</span><span class="n">kb</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+		<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+			<span class="c1">// mouse gets 3 packet, the
+</span>			<span class="c1">// status, dx, dy
+</span>			<span class="o">*</span><span class="n">ms</span> <span class="o">|=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">];</span>
+			<span class="o">*</span><span class="n">ms</span> <span class="o">|=</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">]</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">);</span>
+			<span class="o">*</span><span class="n">ms</span> <span class="o">|=</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">]</span> <span class="o">&lt;&lt;</span> <span class="mi">16</span><span class="p">);</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// move the cursor based on the mouse movement
+</span><span class="kt">void</span>
+<span class="nf">updatecursor</span><span class="p">(</span><span class="n">Cursor</span> <span class="o">*</span><span class="n">c</span><span class="p">,</span> <span class="n">u32</span> <span class="n">ms</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// move x and y, the mouse events
+</span>	<span class="c1">// switches the y coordinates around
+</span>	<span class="n">c</span><span class="o">-&gt;</span><span class="n">dx</span> <span class="o">=</span> <span class="p">(</span><span class="n">s8</span><span class="p">)((</span><span class="n">ms</span> <span class="o">&gt;&gt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="p">);</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">dy</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">s8</span><span class="p">)((</span><span class="n">ms</span> <span class="o">&gt;&gt;</span> <span class="mi">16</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="p">);</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">+=</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">dx</span><span class="p">;</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">+=</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">dy</span><span class="p">;</span>
+
+	<span class="c1">// bounds checking so the cursor does
+</span>	<span class="c1">// not get out of the screen
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">+</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">&gt;=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">-</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">+</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">&gt;=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">-</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// input interrupt
+</span><span class="kt">void</span>
+<span class="nf">inputinr</span><span class="p">(</span><span class="n">Ureg</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// we handle events in the interrupt handler
+</span>	<span class="n">event</span><span class="p">();</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="conclusion">Conclusion</h3>
+<p>Here is a sample output from what you should see if all went well:</p>
+
+<p>The timer #1 interrupt is periodic and generates one time a second.</p>
+
+<p>The timer #2 interrupt is one-shot and generated one time a second, with delays increasing every 1000 milliseconds
+every time through the loop.</p>
+
+<p>The keyboard and mouse interrupt is generated when the user uses the device.</p>
+
+<figure class="highlight"><pre><code class="language-none" data-lang="none">timer #1 periodic interrupt
+timer #2 one shot interrupt
+timer #1 periodic interrupt
+timer #1 periodic interrupt
+timer #2 one shot interrupt
+timer #1 periodic interrupt
+timer #1 periodic interrupt
+timer #1 periodic interrupt
+timer #2 one shot interrupt
+timer #1 periodic interrupt
+timer #1 periodic interrupt
+key 1c
+key 1c
+key 2b
+key 2b
+timer #1 periodic interrupt
+key 25
+key 42
+key 25
+key 42
+timer #1 periodic interrupt
+key 14
+key 11
+timer #2 one shot interrupt
+key 14
+key 11
+key 11</code></pre></figure>
+
+<p>You can get the code for the demo <a href="https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/using_interrupts_qemu_versatile">here</a>.</p>
+
+
+  </div>
+
+</article>
+
+      </div>
+    </div>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Notes</h2>
+
+	<div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>
+            
+              Quan Tran
+            
+            </li>
+            
+            <li><a href="mailto:qeed.quan@gmail.com">qeed.quan@gmail.com</a></li>
+            
+        </ul>
+	</div>
+
+	<div class="footer-col footer-col-2">
+		<ul class="social-media-list">
+          
+          <li>
+            <a href="https://github.com/qeedquan"><span class="icon icon--github"><svg viewBox="0 0 16 16"><path fill="#828282" d="M7.999,0.431c-4.285,0-7.76,3.474-7.76,7.761 c0,3.428,2.223,6.337,5.307,7.363c0.388,0.071,0.53-0.168,0.53-0.374c0-0.184-0.007-0.672-0.01-1.32 c-2.159,0.469-2.614-1.04-2.614-1.04c-0.353-0.896-0.862-1.135-0.862-1.135c-0.705-0.481,0.053-0.472,0.053-0.472 c0.779,0.055,1.189,0.8,1.189,0.8c0.692,1.186,1.816,0.843,2.258,0.645c0.071-0.502,0.271-0.843,0.493-1.037 C4.86,11.425,3.049,10.76,3.049,7.786c0-0.847,0.302-1.54,0.799-2.082C3.768,5.507,3.501,4.718,3.924,3.65 c0,0,0.652-0.209,2.134,0.796C6.677,4.273,7.34,4.187,8,4.184c0.659,0.003,1.323,0.089,1.943,0.261 c1.482-1.004,2.132-0.796,2.132-0.796c0.423,1.068,0.157,1.857,0.077,2.054c0.497,0.542,0.798,1.235,0.798,2.082 c0,2.981-1.814,3.637-3.543,3.829c0.279,0.24,0.527,0.713,0.527,1.437c0,1.037-0.01,1.874-0.01,2.129 c0,0.208,0.14,0.449,0.534,0.373c3.081-1.028,5.302-3.935,5.302-7.362C15.76,3.906,12.285,0.431,7.999,0.431z"/></svg>
+</span><span class="username">qeedquan</span></a>
+
+          </li>
+          
+
+          
+		  
+          
+          <li>
+            <a href="https://www.linkedin.com/in/quan-tran-15a72831"><span class="icon icon--linkedin"><svg viewBox="0 0 512 512"><path fill="#ffb577" d="M186.4 142.4c0 19-15.3 34.5-34.2 34.5 -18.9 0-34.2-15.4-34.2-34.5 0-19 15.3-34.5 34.2-34.5C171.1 107.9 186.4 123.4 186.4 142.4zM181.4 201.3h-57.8V388.1h57.8V201.3zM273.8 201.3h-55.4V388.1h55.4c0 0 0-69.3 0-98 0-26.3 12.1-41.9 35.2-41.9 21.3 0 31.5 15 31.5 41.9 0 26.9 0 98 0 98h57.5c0 0 0-68.2 0-118.3 0-50-28.3-74.2-68-74.2 -39.6 0-56.3 30.9-56.3 30.9v-25.2H273.8z"/></svg>
+</span><span class="username">qeedquan</span></a>
+
+          </li>
+          
+        </ul>
+      </div>
+
+	  <div class="footer-col footer-col-3">
+        <p></p>
+	  </div>
+	</div>
+  
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

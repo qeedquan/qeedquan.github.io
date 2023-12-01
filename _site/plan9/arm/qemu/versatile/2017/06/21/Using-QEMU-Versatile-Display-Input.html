@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Programming display and input devices for the QEMU Versatile board</title>
+  <meta name="description" content="The QEMU Versatile emulates the Versatile System on Chip. The board comes with a fairlycomplete set of devices such as a display controller, keyboard, mouse,...">
+
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="canonical" href="http://qeedquan.github.io/plan9/arm/qemu/versatile/2017/06/21/Using-QEMU-Versatile-Display-Input.html">
+  <link rel="alternate" type="application/rss+xml" title="Notes" href="http://qeedquan.github.io/feed.xml">
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Notes</a>
+
+    <nav class="site-nav">
+      <a href="#" class="menu-icon">
+        <svg viewBox="0 0 18 15">
+          <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"/>
+          <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"/>
+          <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"/>
+        </svg>
+      </a>
+
+      <div class="trigger">
+        
+          
+        
+          
+        
+      </div>
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <div class="page-content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">Programming display and input devices for the QEMU Versatile board</h1>
+    <p class="post-meta"><time datetime="2017-06-21T00:00:00-04:00" itemprop="datePublished">Jun 21, 2017</time></p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>The <a href="https://github.com/qemu/qemu/blob/master/hw/arm/versatilepb.c">QEMU Versatile</a> emulates the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.dui0225d/DUI0225D_versatile_application_baseboard_arm926ej_s_ug.pdf">Versatile</a> System on Chip. The board comes with a fairly
+complete set of devices such as a display controller, keyboard, mouse, ethernet, and other miscellaneous devices providing
+the ability to run a complete OS such as Linux on top.</p>
+
+<p>This tutorial will show how to program the display and input devices and use it without an OS. We use QEMU <a href="http://download.qemu-project.org/qemu-2.9.0.tar.xz">2.9.0</a> for this tutorial and the Plan 9 toolchain. This is only a barebones example that gets it working, for a more complete setup, refer to the documentation of the devices.</p>
+
+<p><strong>Note: This example only works in QEMU, it will not work on a real board because we skip some setup that real hardware would need but QEMU doesn’t.</strong></p>
+
+<p>We setup the board as described in the previous <a href="https://qeedquan.github.io/plan9/arm/binary/2017/05/29/Plan9-Flat-ARM-Binaries.html">article</a> without the MMU to make things more expedient. We disable all interrupts and initialize the devices and then jump into main() to do all the setup of the devices and main loop.</p>
+
+<figure class="highlight"><pre><code class="language-assembly" data-lang="assembly">// l.s
+#define SVC_MODE 0x13
+#define NO_INT 0xc0
+
+// start execution here
+TEXT _start(SB), 1, $-4
+	// supervisor mode and no interrupt 
+	MOVW $(SVC_MODE|NO_INT), R1
+	MOVW R1, CPSR
+
+	// setup R12 for global variable access
+	MOVW $setR12(SB), R12
+
+	// setup stack and jump to C
+	MOVW $0x8000, SP
+	BL main(SB)
+
+	// loop forever
+	B 0(PC)</code></pre></figure>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// main.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="c1">// cursor on the screen
+</span><span class="n">Cursor</span> <span class="n">cursor</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">.</span><span class="n">w</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span>
+    <span class="p">.</span><span class="n">h</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// our screen
+</span><span class="n">Clcd</span> <span class="o">*</span><span class="n">screen</span><span class="p">;</span>
+
+<span class="c1">// the artwork we are drawing
+</span><span class="n">Texture</span> <span class="n">pic</span><span class="p">;</span>
+
+<span class="c1">// setup the texture attribute
+// for rendering
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">artinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="k">extern</span> <span class="n">u32</span> <span class="n">art</span><span class="p">[];</span>
+	<span class="n">Texture</span> <span class="o">*</span><span class="n">t</span><span class="p">;</span>
+
+	<span class="n">t</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">pic</span><span class="p">;</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">p</span> <span class="o">=</span> <span class="n">art</span><span class="p">;</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">=</span> <span class="mi">190</span><span class="p">;</span>
+	<span class="n">t</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">=</span> <span class="mi">222</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// get keyboard and mouse events
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">event</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u32</span> <span class="n">kb</span><span class="p">,</span> <span class="n">ms</span><span class="p">;</span>
+
+	<span class="k">for</span> <span class="p">(;;)</span> <span class="p">{</span>
+		<span class="n">pollinput</span><span class="p">(</span><span class="o">&amp;</span><span class="n">kb</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ms</span><span class="p">);</span>
+		<span class="k">if</span> <span class="p">(</span><span class="n">kb</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">ms</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+			<span class="k">break</span><span class="p">;</span>
+
+		<span class="n">updatecursor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cursor</span><span class="p">,</span> <span class="n">ms</span><span class="p">);</span>
+
+		<span class="k">if</span> <span class="p">(</span><span class="n">kb</span><span class="p">)</span>
+			<span class="n">print</span><span class="p">(</span><span class="s">"key %x</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">kb</span><span class="p">);</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kt">void</span>
+<span class="nf">draw</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Rect</span> <span class="n">r</span><span class="p">;</span>
+
+	<span class="c1">// disable the screen so we can draw to it
+</span>	<span class="c1">// if we enable the screen while drawing, it can cause
+</span>	<span class="c1">// the update to show partial updates, where as we want
+</span>	<span class="c1">// something like double buffering, this achieves something
+</span>	<span class="c1">// like double-buffering
+</span>	<span class="n">clcddisable</span><span class="p">(</span><span class="n">screen</span><span class="p">);</span>
+
+	<span class="c1">// clear to a gray background
+</span>	<span class="n">fillrect</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">,</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">,</span> <span class="mh">0xff555555</span><span class="p">);</span>
+
+	<span class="c1">// draw a image at the center of the screen
+</span>	<span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="n">Rect</span><span class="p">){(</span><span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">-</span> <span class="n">pic</span><span class="p">.</span><span class="n">w</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">-</span> <span class="n">pic</span><span class="p">.</span><span class="n">h</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">pic</span><span class="p">.</span><span class="n">w</span><span class="p">,</span> <span class="n">pic</span><span class="p">.</span><span class="n">h</span><span class="p">};</span>
+	<span class="n">filltexture</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pic</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">r</span><span class="p">,</span> <span class="n">nil</span><span class="p">);</span>
+
+	<span class="c1">// draw our cursor
+</span>	<span class="n">fillrect</span><span class="p">(</span><span class="n">cursor</span><span class="p">.</span><span class="n">x</span><span class="p">,</span> <span class="n">cursor</span><span class="p">.</span><span class="n">y</span><span class="p">,</span> <span class="n">cursor</span><span class="p">.</span><span class="n">w</span><span class="p">,</span> <span class="n">cursor</span><span class="p">.</span><span class="n">h</span><span class="p">,</span> <span class="mh">0xff00ff00</span><span class="p">);</span>
+
+	<span class="c1">// draw the device, we need to delay a little so QEMU can have a chance to refresh
+</span>	<span class="c1">// if we do not have a delay, QEMU can get into a execution path where it only
+</span>	<span class="c1">// sees the disable and not the enable when it decides to refresh, thus giving 
+</span>	<span class="c1">// us a black screen.
+</span>	<span class="n">clcdenable</span><span class="p">(</span><span class="n">screen</span><span class="p">);</span>
+	<span class="n">delay</span><span class="p">(</span><span class="mi">5</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="kt">void</span>
+<span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// setup UART for printing to terminal
+</span>	<span class="n">uartinit</span><span class="p">();</span>
+
+	<span class="c1">// setup timer so we can sleep
+</span>	<span class="n">timerinit</span><span class="p">();</span>
+
+	<span class="c1">// setup the display so we can draw to the screen
+</span>	<span class="n">clcdinit</span><span class="p">();</span>
+
+	<span class="c1">// setup keyboard and mouse
+</span>	<span class="n">inputinit</span><span class="p">();</span>
+
+	<span class="c1">// setup texture for drawing
+</span>	<span class="n">artinit</span><span class="p">();</span>
+
+	<span class="c1">// game style loop
+</span>	<span class="k">for</span> <span class="p">(;;)</span> <span class="p">{</span>
+		<span class="n">event</span><span class="p">();</span>
+		<span class="n">draw</span><span class="p">();</span>
+	<span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>In main, we setup all of the devices first and then go into a loop. 
+UART is setup first because we want to be able to print to stdio as quickly as possible for debugging purposes.
+The timer is setup next in order to implement delays which the display device needs. We then initialize they keyboard
+and mouse and load the artwork at the end. We do not enable interrupts here as we will handle all the device updates
+using polling mode.</p>
+
+<p>The main loop consists of handling keyboard/mouse events and drawing to the screen the artwork that we loaded.
+The artwork we loaded is a 32 bit RGBA encoded buffer that we just passed directly to the frame buffer for rendering.</p>
+
+<p>We are now ready to cover how to map the memory of the devices and program them.</p>
+
+<h3 id="memory-map">Memory Map</h3>
+
+<p>We can get the memory map of where the device lives in the <a href="https://github.com/qemu/qemu/blob/master/hw/arm/versatilepb.c">QEMU Versatile</a> source code. These addresses are physical
+mappings and we can just make a pointer to the location and start using it.</p>
+
+<p>Here are the full memory mapping of the Versatile:</p>
+
+<figure class="highlight"><pre><code class="language-none" data-lang="none">Memory map for Versatile:
+
+0x10000000 System registers.  
+0x10001000 PCI controller config registers.  
+0x10002000 Serial bus interface.  
+0x10003000 Secondary interrupt controller.  
+0x10004000 AACI (audio).  
+0x10005000 MMCI0.  
+0x10006000 KMI0 (keyboard).  
+0x10007000 KMI1 (mouse).  
+0x10008000 Character LCD Interface.  
+0x10009000 UART3.  
+0x1000a000 Smart card 1.  
+0x1000b000 MMCI1.  
+0x10010000 Ethernet.  
+0x10020000 USB.  
+0x10100000 SSMC.  
+0x10110000 MPMC.  
+0x10120000 CLCD Controller.  
+0x10130000 DMA Controller.  
+0x10140000 Vectored interrupt controller.  
+0x101d0000 AHB Monitor Interface.  
+0x101e0000 System Controller.  
+0x101e1000 Watchdog Interface.  
+0x101e2000 Timer 0/1.  
+0x101e3000 Timer 2/3.  
+0x101e4000 GPIO port 0.  
+0x101e5000 GPIO port 1.  
+0x101e6000 GPIO port 2.  
+0x101e7000 GPIO port 3.  
+0x101e8000 RTC.  
+0x101f0000 Smart card 0.  
+0x101f1000 UART0.  
+0x101f2000 UART1.  
+0x101f3000 UART2.  
+0x101f4000 SSPI.  
+0x34000000 NOR Flash </code></pre></figure>
+
+<p>We will only use UART, CLCD controller, timer, keyboard, and mouse. We will end up only using
+these memory spaces:</p>
+
+<figure class="highlight"><pre><code class="language-none" data-lang="none">Memory map that we will use:
+
+0x10006000 KMI0 (keyboard).  
+0x10007000 KMI1 (mouse).  
+0x10009000 UART3.  
+0x10120000 CLCD Controller.  
+0x101e2000 Timer 0/1.  
+0x101e3000 Timer 2/3.  
+0x101f1000 UART0.  
+0x101f2000 UART1.  
+0x101f3000 UART2. </code></pre></figure>
+
+<p>Since we are operating without an MMU, we can just create a pointer to these addresses and write to it directly.</p>
+
+<h3 id="uart">UART</h3>
+<p>UART provides serial output which we route to stdio using the QEMU command line flag <strong><em>-serial stdio</em></strong>. Only
+the DATA register is used for outputting to UART for printing to stdout.</p>
+
+<p>To use the UART DATA register, we just need to write to the register the character we want to output, QEMU should then
+print it out to standard output. We only use UART0 for terminal output, so the other UARTs are left unused, but using those
+would be the same code; just at different register offsets. Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0183f/DDI0183.pdf">UART data sheet</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// uart.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+</span>
+<span class="c1">// UART base addresses
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">UART0</span> <span class="o">=</span> <span class="mh">0x101f1000</span><span class="p">,</span>
+	<span class="n">UART1</span> <span class="o">=</span> <span class="mh">0x101f2000</span><span class="p">,</span>
+	<span class="n">UART2</span> <span class="o">=</span> <span class="mh">0x101f3000</span><span class="p">,</span>
+	<span class="n">UART3</span> <span class="o">=</span> <span class="mh">0x10009000</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// register offsets, 32 bit wide
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="c1">// DATA register for writing output characters
+</span>	<span class="n">DR</span> <span class="o">=</span> <span class="mh">0x0</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// physical UART device descriptions
+</span><span class="n">Uart</span> <span class="n">physuart</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">UART0</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">UART1</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">UART2</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">UART3</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">};</span>
+
+<span class="c1">// initializes UART
+</span><span class="kt">void</span>
+<span class="nf">uartinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// use UART0 for the console output
+</span>	<span class="n">consuart</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">physuart</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="p">}</span>
+
+<span class="c1">// output a character to UART
+</span><span class="kt">void</span>
+<span class="nf">uartputc</span><span class="p">(</span><span class="n">Uart</span> <span class="o">*</span><span class="n">u</span><span class="p">,</span> <span class="kt">int</span> <span class="n">c</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">u</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DR</span><span class="p">]</span> <span class="o">=</span> <span class="n">c</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="timer">Timer</h3>
+<p>The timers contain a monotonic counter that ticks with a fixed period, enabling us to keep track of elapsed time.
+We use it to implement delays for the CLCD display controller for refreshing the screen. 
+Since we only need to sleep in a single threaded context, 
+only one timer is needed. We setup the timer to be 32 bit resolution and enable it for the first timer. By
+default, the timer ticks at 1 MHZ a second so we just need to read the current value in a loop to get the delay we need.
+Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0271d/DDI0271.pdf">Timer data sheet</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// timer.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="c1">// timer registers, 32 bit wide
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">LOAD</span> <span class="o">=</span> <span class="mh">0x0</span><span class="p">,</span>
+	<span class="n">VALUE</span><span class="p">,</span>
+	<span class="n">CTRL</span><span class="p">,</span>
+	<span class="n">INTCLR</span><span class="p">,</span>
+	<span class="n">RIS</span><span class="p">,</span>
+	<span class="n">MIS</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// control bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">ENABLE</span> <span class="o">=</span> <span class="mh">0x80</span><span class="p">,</span>
+	<span class="n">PERIODIC</span> <span class="o">=</span> <span class="mh">0x40</span><span class="p">,</span>
+	<span class="n">INTENABLE</span> <span class="o">=</span> <span class="mh">0x20</span><span class="p">,</span>
+	<span class="n">RESLN32</span> <span class="o">=</span> <span class="mh">0x2</span><span class="p">,</span>
+	<span class="n">ONESHOT</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="n">Timer</span> <span class="n">phystimer</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x101e2000</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)(</span><span class="mh">0x101e2000</span> <span class="o">+</span> <span class="mh">0x20</span><span class="p">),</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x101e3000</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)(</span><span class="mh">0x101e3000</span> <span class="o">+</span> <span class="mh">0x20</span><span class="p">),</span>
+    <span class="p">},</span>
+<span class="p">};</span>
+
+<span class="c1">// reset the timer
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">reset</span><span class="p">(</span><span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// enable the device with 32 bit counter wide
+</span>	<span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">=</span> <span class="n">ENABLE</span> <span class="o">|</span> <span class="n">RESLN32</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// initializes the timer
+</span><span class="kt">void</span>
+<span class="nf">timerinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+<span class="p">}</span>
+
+<span class="c1">// delay for n milliseconds
+</span><span class="kt">void</span>
+<span class="nf">delay</span><span class="p">(</span><span class="kt">int</span> <span class="n">n</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="k">while</span> <span class="p">(</span><span class="o">--</span><span class="n">n</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="n">microdelay</span><span class="p">(</span><span class="mi">1000</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// delay for n microseconds
+</span><span class="kt">void</span>
+<span class="nf">microdelay</span><span class="p">(</span><span class="kt">int</span> <span class="n">n</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Timer</span> <span class="o">*</span><span class="n">t</span><span class="p">;</span>
+	<span class="n">u32</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">;</span>
+
+	<span class="c1">// we do not need to worry about underflow here
+</span>	<span class="c1">// since the unsignedness of the values ensure
+</span>	<span class="c1">// that the wrap around calculation is still right
+</span>	<span class="n">t</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">phystimer</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+	<span class="n">a</span> <span class="o">=</span> <span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">VALUE</span><span class="p">];</span>
+	<span class="k">while</span> <span class="p">(</span><span class="n">a</span> <span class="o">-</span> <span class="n">t</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">VALUE</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+		<span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="clcd">CLCD</h3>
+<p>CLCD provides us with a frame buffer display that we can draw to. We setup the mode to be 32 bit true color 640x480 resolution. We also provide a free memory area for the framebuffer. We also need to enable and disable the display during drawing so we do not see the partial updates which shows tearing. The frame buffer is used as a building block for the familiar 
+<code class="highlighter-rouge">setpixel</code> and <code class="highlighter-rouge">fillrect</code>. The only thing we need to do is write to the frame buffer and enable the device to see the update. Here is the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0161e/I904755.html">CLCD data sheet</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// clcd.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="c1">// base physical address
+// of the CLCD device
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">CLCD</span> <span class="o">=</span> <span class="mh">0x10120000</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// the registers offset
+// each is 32 bit wide
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">TIM0</span> <span class="o">=</span> <span class="mh">0x0</span><span class="p">,</span>
+	<span class="n">TIM1</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">,</span>
+	<span class="n">TIM2</span> <span class="o">=</span> <span class="mh">0x2</span><span class="p">,</span>
+	<span class="n">TIM3</span> <span class="o">=</span> <span class="mh">0x3</span><span class="p">,</span>
+	<span class="n">UPBASE</span> <span class="o">=</span> <span class="mh">0x4</span><span class="p">,</span>
+	<span class="n">LPBASE</span> <span class="o">=</span> <span class="mh">0x5</span><span class="p">,</span>
+	<span class="n">CTRL</span> <span class="o">=</span> <span class="mh">0x6</span><span class="p">,</span>
+	<span class="n">IMSC</span> <span class="o">=</span> <span class="mh">0x7</span><span class="p">,</span>
+	<span class="n">ICR</span> <span class="o">=</span> <span class="mh">0xa</span><span class="p">,</span>
+	<span class="n">SYS</span> <span class="o">=</span> <span class="mh">0x14</span><span class="p">,</span>
+	<span class="n">PAL</span> <span class="o">=</span> <span class="mh">0x80</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// system register bits 
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">PWR3V5</span> <span class="o">=</span> <span class="mh">0x10</span><span class="p">,</span>
+	<span class="n">LCDIOON</span> <span class="o">=</span> <span class="mh">0x4</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// control register bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">CR_EN</span> <span class="o">=</span> <span class="mh">0x1</span><span class="p">,</span>
+	<span class="n">CR_BGR</span> <span class="o">=</span> <span class="mh">0x100</span><span class="p">,</span>
+	<span class="n">CR_BEBO</span> <span class="o">=</span> <span class="mh">0x200</span><span class="p">,</span>
+	<span class="n">CR_BEPO</span> <span class="o">=</span> <span class="mh">0x400</span><span class="p">,</span>
+	<span class="n">CR_PWR</span> <span class="o">=</span> <span class="mh">0x800</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// color depth
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">BPP1</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+	<span class="n">BPP2</span><span class="p">,</span>
+	<span class="n">BPP4</span><span class="p">,</span>
+	<span class="n">BPP8</span><span class="p">,</span>
+	<span class="n">BPP16</span><span class="p">,</span>
+	<span class="n">BPP32</span><span class="p">,</span>
+	<span class="n">BPP16_565</span><span class="p">,</span>
+	<span class="n">BPP12</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="n">Clcd</span> <span class="n">physclcd</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">CLCD</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">w</span> <span class="o">=</span> <span class="mi">640</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">h</span> <span class="o">=</span> <span class="mi">480</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">fb</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x150000</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">};</span>
+
+<span class="c1">// resets the CLCD controller
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">reset</span><span class="p">(</span><span class="n">Clcd</span> <span class="o">*</span><span class="n">c</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// turn on the device
+</span>	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">SYS</span><span class="p">]</span> <span class="o">=</span> <span class="n">PWR3V5</span> <span class="o">|</span> <span class="n">LCDIOON</span><span class="p">;</span>
+
+	<span class="c1">// setup width/height
+</span>	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">TIM0</span><span class="p">]</span> <span class="o">=</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">/</span> <span class="mi">4</span> <span class="o">-</span> <span class="mi">4</span><span class="p">;</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">TIM1</span><span class="p">]</span> <span class="o">=</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+
+	<span class="c1">// frame buffer location
+</span>	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">UPBASE</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">uintptr</span><span class="p">)</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">fb</span><span class="p">;</span>
+
+	<span class="c1">// 32 bit color (rgba)
+</span>	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">BPP32</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// disable the screen, it leaves whatever was on
+// the screen intact
+</span><span class="kt">void</span>
+<span class="nf">clcddisable</span><span class="p">(</span><span class="n">Clcd</span> <span class="o">*</span><span class="n">c</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="p">(</span><span class="n">CR_PWR</span> <span class="o">|</span> <span class="n">CR_EN</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// enable the screen, QEMU will start updating
+// the frame buffer again
+</span><span class="kt">void</span>
+<span class="nf">clcdenable</span><span class="p">(</span><span class="n">Clcd</span> <span class="o">*</span><span class="n">c</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">|=</span> <span class="p">(</span><span class="n">CR_PWR</span> <span class="o">|</span> <span class="n">CR_EN</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// initializes the CLCD display controller
+</span><span class="kt">void</span>
+<span class="nf">clcdinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">physclcd</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+	<span class="n">screen</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">physclcd</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+	<span class="n">fillrect</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">,</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">,</span> <span class="mh">0xff555555</span><span class="p">);</span>
+	<span class="n">microdelay</span><span class="p">(</span><span class="mi">5</span><span class="p">);</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="keyboardmouse">Keyboard/Mouse</h3>
+<p>Keyboard/Mouse are as you expect. The interface is fairly simple, we just enable the device and read the status register
+to see if there is data available, if there is just grab the data and parse it. Here is the link to the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.ddi0143c/DDI0143.pdf">Input data sheet</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="c1">// input.c
+</span>
+<span class="cp">#include "u.h"
+#include "libc.h"
+#include "dat.h"
+#include "fns.h"
+</span>
+<span class="c1">// registers, 32 bit wide
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">CTRL</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+	<span class="n">STAT</span><span class="p">,</span>
+	<span class="n">DATA</span><span class="p">,</span>
+	<span class="n">CLKDIV</span><span class="p">,</span>
+	<span class="n">IR</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// control register bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">ENABLE</span> <span class="o">=</span> <span class="mh">0x4</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="c1">// status register bits
+</span><span class="k">enum</span> <span class="p">{</span>
+	<span class="n">RXFULL</span> <span class="o">=</span> <span class="mh">0x10</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">static</span> <span class="n">Input</span> <span class="n">physinput</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x10006000</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="p">.</span><span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="mh">0x10007000</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">ismouse</span> <span class="o">=</span> <span class="nb">true</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">};</span>
+
+<span class="c1">// send data and drain input
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">send</span><span class="p">(</span><span class="n">Input</span> <span class="o">*</span><span class="n">p</span><span class="p">,</span> <span class="n">u32</span> <span class="n">v</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span><span class="p">;</span>
+	<span class="k">while</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">STAT</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">RXFULL</span><span class="p">)</span>
+		<span class="n">v</span> <span class="o">=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">];</span>
+<span class="p">}</span>
+
+<span class="c1">// reset the device
+</span><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">reset</span><span class="p">(</span><span class="n">Input</span> <span class="o">*</span><span class="n">p</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">CTRL</span><span class="p">]</span> <span class="o">=</span> <span class="n">ENABLE</span><span class="p">;</span>
+
+	<span class="c1">// this enable the ps2 interface for usage
+</span>	<span class="c1">// without this we won't get the mouse events
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">ismouse</span><span class="p">)</span>
+		<span class="n">send</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mh">0xf4</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// initializes the input
+</span><span class="kt">void</span>
+<span class="nf">inputinit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">physinput</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+	<span class="n">reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">physinput</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+<span class="p">}</span>
+
+<span class="c1">// polls for input if there is no input
+// set events to 0
+</span><span class="kt">void</span>
+<span class="nf">pollinput</span><span class="p">(</span><span class="n">u32</span> <span class="o">*</span><span class="n">kb</span><span class="p">,</span> <span class="n">u32</span> <span class="o">*</span><span class="n">ms</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="n">Input</span> <span class="o">*</span><span class="n">p</span><span class="p">;</span>
+	<span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+
+	<span class="o">*</span><span class="n">kb</span> <span class="o">=</span> <span class="o">*</span><span class="n">ms</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nelem</span><span class="p">(</span><span class="n">physinput</span><span class="p">);</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">physinput</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
+		<span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">STAT</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">RXFULL</span><span class="p">))</span>
+			<span class="k">continue</span><span class="p">;</span>
+
+		<span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+			<span class="c1">// keyboard just gets raw data
+</span>			<span class="c1">// ignore 0xf0, that is a "end marker"
+</span>			<span class="o">*</span><span class="n">kb</span> <span class="o">=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">];</span>
+			<span class="k">if</span> <span class="p">(</span><span class="o">*</span><span class="n">kb</span> <span class="o">==</span> <span class="mh">0xf0</span><span class="p">)</span>
+				<span class="o">*</span><span class="n">kb</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+		<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+			<span class="c1">// mouse gets 3 packet, the 
+</span>			<span class="c1">// status, dx, dy
+</span>			<span class="o">*</span><span class="n">ms</span> <span class="o">|=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">];</span>
+			<span class="o">*</span><span class="n">ms</span> <span class="o">|=</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">]</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span><span class="p">);</span>
+			<span class="o">*</span><span class="n">ms</span> <span class="o">|=</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">r</span><span class="p">[</span><span class="n">DATA</span><span class="p">]</span> <span class="o">&lt;&lt;</span> <span class="mi">16</span><span class="p">);</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// move the cursor based on the mouse movement
+</span><span class="kt">void</span>
+<span class="nf">updatecursor</span><span class="p">(</span><span class="n">Cursor</span> <span class="o">*</span><span class="n">c</span><span class="p">,</span> <span class="n">u32</span> <span class="n">ms</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// move x and y, the mouse events
+</span>	<span class="c1">// switches the y coordinates around
+</span>	<span class="n">c</span><span class="o">-&gt;</span><span class="n">dx</span> <span class="o">=</span> <span class="p">(</span><span class="n">s8</span><span class="p">)((</span><span class="n">ms</span> <span class="o">&gt;&gt;</span> <span class="mi">8</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="p">);</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">dy</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">s8</span><span class="p">)((</span><span class="n">ms</span> <span class="o">&gt;&gt;</span> <span class="mi">16</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mh">0xff</span><span class="p">);</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">+=</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">dx</span><span class="p">;</span>
+	<span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">+=</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">dy</span><span class="p">;</span>
+
+	<span class="c1">// bounds checking so the cursor does
+</span>	<span class="c1">// not get out of the screen
+</span>	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">+</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">&gt;=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">x</span> <span class="o">=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">w</span> <span class="o">-</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	<span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">+</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">&gt;=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">-&gt;</span><span class="n">y</span> <span class="o">=</span> <span class="n">screen</span><span class="o">-&gt;</span><span class="n">h</span> <span class="o">-</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<h3 id="odds-and-ends">Odds and Ends</h3>
+<p>For some of our libc functions such as <code class="highlighter-rouge">print</code>, we have to use va_args and division for printing integers. This requires us
+to pull in some code from the Plan 9 libc functions.</p>
+
+<p>For va_list, we can get the code for it from <a href="https://code.9front.org/hg/plan9front/file/37a3cd19b200/arm/include/u.h">u.h</a> from the Plan 9 source tree. The Plan 9 compilers passes the variadic
+variables on the stack, so we just start walking memory locations from an argument to get to the next one.</p>
+
+<p>Division is done in software as some ARM processors do not have division support, so we need pull the code from the Plan 9 <a href="https://code.9front.org/hg/plan9front/file/37a3cd19b200/sys/src/libc/arm">libc functions</a> (<a href="https://code.9front.org/hg/plan9front/file/37a3cd19b200/sys/src/libc/arm/vlrt.c">vlrt.c</a>, <a href="https://code.9front.org/hg/plan9front/file/37a3cd19b200/sys/src/libc/arm/vlop.s">vlop.s</a>, and <a href="https://code.9front.org/hg/plan9front/file/37a3cd19b200/sys/src/libc/arm/div.s">div.s</a> specifically). If one tries to use the division and modulus operations without
+these files, the linker will try to pull them in and fail if it can’t find them.</p>
+
+<h3 id="conclusion">Conclusion</h3>
+
+<p>If all goes well, this is what you should see from QEMU:</p>
+
+<p><img src="/assets/using_qemu_versatile_display_input/qemu.png" alt="QEMU Output" /></p>
+
+<p>You can get the code to the demo <a href="https://github.com/qeedquan/qeedquan.github.io/blob/master/assets/using_qemu_versatile_display_input">here</a>.</p>
+
+
+  </div>
+
+</article>
+
+      </div>
+    </div>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Notes</h2>
+
+	<div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>
+            
+              Quan Tran
+            
+            </li>
+            
+            <li><a href="mailto:qeed.quan@gmail.com">qeed.quan@gmail.com</a></li>
+            
+        </ul>
+	</div>
+
+	<div class="footer-col footer-col-2">
+		<ul class="social-media-list">
+          
+          <li>
+            <a href="https://github.com/qeedquan"><span class="icon icon--github"><svg viewBox="0 0 16 16"><path fill="#828282" d="M7.999,0.431c-4.285,0-7.76,3.474-7.76,7.761 c0,3.428,2.223,6.337,5.307,7.363c0.388,0.071,0.53-0.168,0.53-0.374c0-0.184-0.007-0.672-0.01-1.32 c-2.159,0.469-2.614-1.04-2.614-1.04c-0.353-0.896-0.862-1.135-0.862-1.135c-0.705-0.481,0.053-0.472,0.053-0.472 c0.779,0.055,1.189,0.8,1.189,0.8c0.692,1.186,1.816,0.843,2.258,0.645c0.071-0.502,0.271-0.843,0.493-1.037 C4.86,11.425,3.049,10.76,3.049,7.786c0-0.847,0.302-1.54,0.799-2.082C3.768,5.507,3.501,4.718,3.924,3.65 c0,0,0.652-0.209,2.134,0.796C6.677,4.273,7.34,4.187,8,4.184c0.659,0.003,1.323,0.089,1.943,0.261 c1.482-1.004,2.132-0.796,2.132-0.796c0.423,1.068,0.157,1.857,0.077,2.054c0.497,0.542,0.798,1.235,0.798,2.082 c0,2.981-1.814,3.637-3.543,3.829c0.279,0.24,0.527,0.713,0.527,1.437c0,1.037-0.01,1.874-0.01,2.129 c0,0.208,0.14,0.449,0.534,0.373c3.081-1.028,5.302-3.935,5.302-7.362C15.76,3.906,12.285,0.431,7.999,0.431z"/></svg>
+</span><span class="username">qeedquan</span></a>
+
+          </li>
+          
+
+          
+		  
+          
+          <li>
+            <a href="https://www.linkedin.com/in/quan-tran-15a72831"><span class="icon icon--linkedin"><svg viewBox="0 0 512 512"><path fill="#ffb577" d="M186.4 142.4c0 19-15.3 34.5-34.2 34.5 -18.9 0-34.2-15.4-34.2-34.5 0-19 15.3-34.5 34.2-34.5C171.1 107.9 186.4 123.4 186.4 142.4zM181.4 201.3h-57.8V388.1h57.8V201.3zM273.8 201.3h-55.4V388.1h55.4c0 0 0-69.3 0-98 0-26.3 12.1-41.9 35.2-41.9 21.3 0 31.5 15 31.5 41.9 0 26.9 0 98 0 98h57.5c0 0 0-68.2 0-118.3 0-50-28.3-74.2-68-74.2 -39.6 0-56.3 30.9-56.3 30.9v-25.2H273.8z"/></svg>
+</span><span class="username">qeedquan</span></a>
+
+          </li>
+          
+        </ul>
+      </div>
+
+	  <div class="footer-col footer-col-3">
+        <p></p>
+	  </div>
+	</div>
+  
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>
